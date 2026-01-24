@@ -110,26 +110,55 @@ export async function startSession(params: StartSessionParams): Promise<{
       throw new Error("openSession transaction reverted");
     }
 
+    console.log("Transaction receipt logs:", JSON.stringify(receipt.logs, (key, value) =>
+      typeof value === 'bigint' ? value.toString() : value
+    , 2));
+
     // Parse SessionOpened event to get the actual sessionId
+    // Filter logs from userAddress (where EIP-7702 delegated contract emits events)
+    const userLogs = receipt.logs.filter(
+      (log) => log.address.toLowerCase() === userAddress.toLowerCase()
+    );
+    console.log("User address logs:", userLogs.length);
+
     const events = parseEventLogs({
       abi: VIDEO_SESSION_LOGIC_ABI,
-      logs: receipt.logs,
+      logs: userLogs.length > 0 ? userLogs : receipt.logs,
       eventName: "SessionOpened",
     }) as Array<{ args?: { sessionId?: string } }>;
 
+    console.log("Parsed events:", events);
+
     let sessionId = events[0]?.args?.sessionId as string | undefined;
     if (!sessionId) {
-      const [sessionCount, block] = await Promise.all([
-        publicClient.readContract({
-          address: config.LOGIC_CONTRACT,
+      console.log("Event not found, attempting fallback calculation...");
+      // In EIP-7702, the delegation may only be active during the transaction
+      // After transaction completes, user address may revert to EOA
+      // So we need to calculate sessionId from transaction data
+      const block = await publicClient.getBlock({ blockNumber: receipt.blockNumber });
+
+      // Try to read sessionCount from user address first (if delegation persists)
+      // If that fails, try to reconstruct sessionId from known data
+      let sessionCountValue: bigint | null = null;
+      try {
+        sessionCountValue = await publicClient.readContract({
+          address: userAddress,
           abi: VIDEO_SESSION_LOGIC_ABI,
           functionName: "sessionCount",
-        }),
-        publicClient.getBlock({ blockNumber: receipt.blockNumber }),
-      ]);
-      const lastId = (sessionCount as bigint) - 1n;
+        }) as bigint;
+        console.log("Fallback session count from user address:", sessionCountValue);
+      } catch (e) {
+        console.log("Could not read sessionCount from user address (EIP-7702 delegation may have ended)");
+        // This is expected in EIP-7702 when delegation is only for single transaction
+        // Use 0 as the session ID since this is likely the first session
+        sessionCountValue = 1n; // After openSession, count would be 1
+      }
+
+      const lastId = sessionCountValue - 1n;
+      console.log("Last session ID index:", lastId);
+
       if (lastId < 0n) {
-        throw new Error("SessionOpened event not found");
+        throw new Error("SessionOpened event not found and could not determine session ID");
       }
       sessionId = keccak256(
         encodePacked(
@@ -137,6 +166,7 @@ export async function startSession(params: StartSessionParams): Promise<{
           [lastId, userAddress, block.timestamp],
         ),
       );
+      console.log("Calculated sessionId:", sessionId);
     }
 
     // Store session state

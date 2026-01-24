@@ -234,11 +234,9 @@ export default function Home() {
       }
 
       setActiveSessionId(startData.sessionId);
-
-      // Start video playback
-      if (videoRef.current) {
-        videoRef.current.play();
-      }
+      // Note: Video is already playing since user triggered this by clicking play
+      // Do NOT call videoRef.current.play() here as it would re-trigger handleVideoPlay
+      // before activeSessionId state is updated (React async state update)
     } catch (error: any) {
       console.error("Error in handleStartWatching:", error);
       setError(error.message || "Failed to start session");
@@ -356,10 +354,8 @@ export default function Home() {
         {/* Header */}
         <header className="flex items-center justify-between mb-16">
           <div className="flex items-center gap-4">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#8338ec] to-[#3a86ff] flex items-center justify-center shadow-lg shadow-purple-500/20">
-              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
+            <div className="w-10 h-10 rounded-xl overflow-hidden shadow-lg shadow-purple-500/20">
+              <img src="/logo.png" alt="TickPay Logo" className="w-full h-full object-cover" />
             </div>
             <div>
               <h1 className="text-2xl font-bold tracking-tight text-white">

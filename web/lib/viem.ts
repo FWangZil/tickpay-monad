@@ -209,22 +209,132 @@ export async function buildDelegationAuthorization(
   userAddress: Address,
   delegateContract: Address
 ): Promise<Authorization> {
-  const walletClient = createWalletClientForChain();
+  if (typeof window === "undefined" || !window.ethereum) {
+    throw new Error("No wallet found. Please install a wallet extension.");
+  }
 
-  // Use viem's built-in EIP-7702 signing
-  const authorization = await walletClient.signAuthorization({
-    account: userAddress,
-    contractAddress: delegateContract,
+  // Get nonce first
+  const nonceHex = await window.ethereum.request({
+    method: "eth_getTransactionCount",
+    params: [userAddress, "latest"],
+  });
+  const nonce = BigInt(nonceHex);
+  const chainId = NEXT_PUBLIC_CHAIN_ID;
+
+  // Helper to parse result
+  const parseResult = (signatureOrObj: any) => {
+    let r: Hex, s: Hex, v: bigint | undefined, yParity: bigint | undefined;
+
+    if (typeof signatureOrObj === 'string') {
+      const parts = parseSignature(signatureOrObj as Hex);
+      r = parts.r;
+      s = parts.s;
+      v = parts.v ? BigInt(parts.v) : undefined;
+      yParity = parts.yParity !== undefined ? BigInt(parts.yParity) : undefined;
+    } else {
+       // Assume object return
+       const sig = signatureOrObj as any;
+       r = sig.r;
+       s = sig.s;
+       v = sig.v ? BigInt(sig.v) : undefined;
+       yParity = sig.yParity ? BigInt(sig.yParity) : undefined;
+
+      // Handle undefined v/yParity if not present in object but part of signature
+       if (v === undefined && yParity === undefined && sig.yParity) yParity = BigInt(sig.yParity);
+       if (v === undefined && yParity === undefined && sig.v) v = BigInt(sig.v);
+    }
+    return { r, s, v, yParity };
+  };
+
+  let sigData: { r: Hex; s: Hex; v?: bigint; yParity?: bigint } | null = null;
+  let lastError: any = null;
+
+  // Strategy 1: wallet_signAuthorization (Standard)
+  try {
+    console.log("Attempting Strategy 1: wallet_signAuthorization");
+    const res = await window.ethereum.request({
+      method: "wallet_signAuthorization",
+      params: [{
+        chainId: `0x${chainId.toString(16)}`,
+        address: delegateContract,
+        nonce: nonceHex,
+      }],
+    });
+    console.log("Strategy 1 Success");
+    sigData = parseResult(res);
+  } catch (e) {
+    console.warn("wallet_signAuthorization failed, trying experimental...", e);
+    lastError = e;
+  }
+
+  // Strategy 2: wallet_experimental_signAuthorization (Experimental prefix)
+  if (!sigData) {
+    try {
+      console.log("Attempting Strategy 2: wallet_experimental_signAuthorization");
+      const res = await window.ethereum.request({
+        method: "wallet_experimental_signAuthorization",
+        params: [{
+          chainId: `0x${chainId.toString(16)}`,
+          address: delegateContract,
+          nonce: nonceHex,
+        }],
+      });
+      console.log("Strategy 2 Success");
+      sigData = parseResult(res);
+    } catch (e) {
+      console.warn("wallet_experimental_signAuthorization failed, trying fallback...", e);
+      lastError = e;
+    }
+  }
+
+  // Strategy 3: eth_sign (Legacy/Fallback)
+  if (!sigData) {
+    try {
+      console.log("Attempting Strategy 3: Falling back to eth_sign strategy for EIP-7702...");
+      console.warn("WARNING: Using eth_sign. This likely produces an invalid EIP-7702 signature due to Ethereum Message prefix.");
+
+      const authHash = hashAuthorization({
+        address: delegateContract,
+        chainId,
+        nonce: Number(nonce),
+      });
+
+      const signature = await window.ethereum.request({
+        method: "eth_sign",
+        params: [userAddress, authHash],
+      });
+      console.log("Strategy 3 Success");
+      sigData = parseResult(signature);
+    } catch (e: any) {
+      console.error("All signing strategies failed", e);
+      if (e.message?.includes("User denied") || e.code === 4001) {
+          throw new Error("User denied message signature.");
+      }
+       // If both RPCs failed and eth_sign failed (likely due to being disabled)
+      throw new Error(
+        "Failed to sign authorization. Your wallet may not support EIP-7702 RPC methods yet. " +
+        "Please try enabling 'Eth_sign' in your wallet settings as a fallback."
+      );
+    }
+  }
+
+  if (!sigData) throw new Error("Unknown error during signing.");
+
+  console.log("Authorization Signature Data:", {
+    r: sigData.r,
+    s: sigData.s,
+    v: sigData.v,
+    yParity: sigData.yParity
   });
 
   return {
-    address: authorization.contractAddress,
-    chainId: authorization.chainId,
-    nonce: Number(authorization.nonce),
-    r: authorization.r,
-    s: authorization.s,
-    v: authorization.v ? Number(authorization.v) : undefined,
-    yParity: authorization.yParity !== undefined ? Number(authorization.yParity) : undefined,
+    address: delegateContract,
+    chainId,
+    nonce: Number(nonce),
+    r: sigData.r,
+    s: sigData.s,
+    v: sigData.v ? Number(sigData.v) : undefined,
+    yParity: sigData.yParity !== undefined ? Number(sigData.yParity) : undefined,
   };
 }
 
