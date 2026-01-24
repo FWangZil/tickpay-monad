@@ -209,39 +209,22 @@ export async function buildDelegationAuthorization(
   userAddress: Address,
   delegateContract: Address
 ): Promise<Authorization> {
-  if (typeof window === "undefined" || !window.ethereum) {
-    throw new Error("No wallet found. Please install a wallet extension.");
-  }
+  const walletClient = createWalletClientForChain();
 
-  const nonceHex = await window.ethereum.request({
-    method: "eth_getTransactionCount",
-    params: [userAddress, "latest"],
-  });
-  const nonce = Number(nonceHex);
-  const chainId = NEXT_PUBLIC_CHAIN_ID;
-  const authHash = hashAuthorization({
-    address: delegateContract,
-    chainId,
-    nonce,
+  // Use viem's built-in EIP-7702 signing
+  const authorization = await walletClient.signAuthorization({
+    account: userAddress,
+    contractAddress: delegateContract,
   });
 
-  const signature = await window.ethereum.request({
-    method: "eth_sign",
-    params: [userAddress, authHash],
-  });
-
-  const signatureParts = parseSignature(signature as Hex);
   return {
-    address: delegateContract,
-    chainId,
-    nonce,
-    r: signatureParts.r,
-    s: signatureParts.s,
-    v: typeof signatureParts.v === "bigint" ? Number(signatureParts.v) : signatureParts.v,
-    yParity:
-      typeof signatureParts.yParity === "bigint"
-        ? Number(signatureParts.yParity)
-        : signatureParts.yParity,
+    address: authorization.contractAddress,
+    chainId: authorization.chainId,
+    nonce: Number(authorization.nonce),
+    r: authorization.r,
+    s: authorization.s,
+    v: authorization.v ? Number(authorization.v) : undefined,
+    yParity: authorization.yParity !== undefined ? Number(authorization.yParity) : undefined,
   };
 }
 

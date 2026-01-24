@@ -46,10 +46,7 @@ export async function buildAuthorization(
     r: signature.r,
     s: signature.s,
     v: typeof signature.v === "bigint" ? Number(signature.v) : signature.v,
-    yParity:
-      typeof signature.yParity === "bigint"
-        ? Number(signature.yParity)
-        : signature.yParity,
+    yParity: signature.yParity,
   };
 }
 
