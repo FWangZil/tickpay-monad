@@ -401,7 +401,7 @@ export default function Home() {
           <div className="lg:col-span-8 space-y-6">
             <div className="group relative rounded-2xl overflow-hidden bg-[#111] border border-white/5 shadow-2xl shadow-black/50">
               {/* Glow effect behind player */}
-              <div className="absolute -inset-1 bg-gradient-to-r from-[#8338ec] to-[#3a86ff] opacity-20 blur-xl group-hover:opacity-30 transition-opacity duration-500" />
+              <div className="absolute -inset-1 bg-gradient-to-r from-[#8338ec] to-[#3a86ff] opacity-20 blur-xl group-hover:opacity-30 transition-opacity duration-500 pointer-events-none" />
 
               <div className="relative aspect-video bg-black">
                 <video
