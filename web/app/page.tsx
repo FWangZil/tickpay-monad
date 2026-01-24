@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { usePrivy, useWallets, useSign7702Authorization } from "@privy-io/react-auth";
+import { recoverTypedDataAddress } from "viem";
 import {
   checkExistingDelegation,
   NEXT_PUBLIC_LOGIC_CONTRACT,
@@ -138,6 +139,7 @@ export default function Home() {
 
       const createData = await createResponse.json();
       console.log("Session created:", createData);
+      console.log("Domain from relayer:", createData.domain);
 
       if (!createResponse.ok) {
         throw new Error(createData.error || "Failed to create session");
@@ -177,6 +179,21 @@ export default function Home() {
       });
       console.log("Signature received:", signature);
 
+      // Recover actual signer address from signature
+      const actualSigner = await recoverTypedDataAddress({
+        domain: typedData.domain,
+        types: typedData.types,
+        primaryType: typedData.primaryType,
+        message: typedData.message,
+        signature: signature as `0x${string}`,
+      });
+      console.log("Actual signer recovered:", actualSigner);
+      console.log("Expected signer:", walletAddress);
+
+      if (actualSigner.toLowerCase() !== walletAddress.toLowerCase()) {
+        console.warn("⚠️ Signer mismatch! Using actual signer for session request.");
+      }
+
       // Step 4: Start session (relayer sends delegation tx)
       console.log("Step 4: Starting session with relayer...");
 
@@ -199,6 +216,8 @@ export default function Home() {
           signature,
           policyId: 0,
           authorizationList: [authForJson],
+          deadline: createData.deadline,
+          nonce: createData.nonce,
         }),
       });
 

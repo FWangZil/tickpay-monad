@@ -52,11 +52,12 @@ export async function createSession(req: Request, res: Response): Promise<void> 
       nonce: request.nonce.toString(),
       deadline: request.deadline.toString(),
       // EIP-712 domain and types for wallet signing
+      // IMPORTANT: verifyingContract must be the user's EOA (delegated via EIP-7702)
       domain: {
         name: "TickPay",
         version: "1",
         chainId: config.CHAIN_ID,
-        verifyingContract: config.LOGIC_CONTRACT,
+        verifyingContract: userAddress,
       },
       types: {
         SessionRequest: [

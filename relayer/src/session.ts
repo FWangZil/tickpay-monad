@@ -17,6 +17,8 @@ export interface StartSessionParams {
   userPrivateKey?: Hex; // Optional: for demo mode with test key
   authorizationList?: Authorization[];
   policyId?: bigint;
+  deadline?: bigint; // Must match the deadline used when signing
+  nonce?: bigint; // Must match the nonce used when signing
 }
 
 export interface ChargeParams {
@@ -48,24 +50,31 @@ export async function startSession(params: StartSessionParams): Promise<{
     userPrivateKey,
     authorizationList,
     policyId = 0n,
+    deadline: providedDeadline,
+    nonce: providedNonce,
   } = params;
 
-  // Get nonce from user's address (EIP-7702 stores state in user's storage)
-  // Fallback to 0n for first-time users who haven't delegated yet
-  let nonce: bigint = 0n;
-  try {
-    nonce = await publicClient.readContract({
-      address: userAddress, // Read from user's address, not logic contract
-      abi: VIDEO_SESSION_LOGIC_ABI,
-      functionName: "nonces",
-      args: [userAddress],
-    }) as bigint;
-  } catch (e) {
-    console.log("Could not read nonce from user address, using 0 (first-time user)");
-    nonce = 0n;
+  // Use provided nonce/deadline from the signed message, or calculate defaults
+  let nonce: bigint;
+  if (providedNonce !== undefined) {
+    nonce = providedNonce;
+  } else {
+    // Get nonce from user's address (EIP-7702 stores state in user's storage)
+    // Fallback to 0n for first-time users who haven't delegated yet
+    try {
+      nonce = await publicClient.readContract({
+        address: userAddress, // Read from user's address, not logic contract
+        abi: VIDEO_SESSION_LOGIC_ABI,
+        functionName: "nonces",
+        args: [userAddress],
+      }) as bigint;
+    } catch (e) {
+      console.log("Could not read nonce from user address, using 0 (first-time user)");
+      nonce = 0n;
+    }
   }
 
-  const deadline = BigInt(Math.floor(Date.now() / 1000) + 3600); // 1 hour from now
+  const deadline = providedDeadline ?? BigInt(Math.floor(Date.now() / 1000) + 3600); // Use provided or 1 hour from now
 
   // Build session request
   const request = {

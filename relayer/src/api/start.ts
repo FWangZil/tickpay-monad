@@ -7,7 +7,7 @@ import { startSession } from "../session.js";
  */
 export async function startSessionHandler(req: Request, res: Response): Promise<void> {
   try {
-    const { userAddress, signature, userPrivateKey, policyId, authorizationList } = req.body;
+    const { userAddress, signature, userPrivateKey, policyId, authorizationList, deadline, nonce } = req.body;
     const normalizedAuthorizationList = Array.isArray(authorizationList)
       ? authorizationList.map((auth) => ({
           ...auth,
@@ -42,6 +42,8 @@ export async function startSessionHandler(req: Request, res: Response): Promise<
       userPrivateKey: userPrivateKey || undefined,
       authorizationList: normalizedAuthorizationList,
       policyId: policyId ? BigInt(policyId) : undefined,
+      deadline: deadline ? BigInt(deadline) : undefined,
+      nonce: nonce !== undefined ? BigInt(nonce) : undefined,
     });
 
     res.json({
