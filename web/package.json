@@ -8,15 +8,20 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "pages:build": "npx @cloudflare/next-on-pages",
+    "pages:deploy": "wrangler pages deploy .vercel/output/static --project-name=tickpay",
+    "pages:dev": "wrangler pages dev .vercel/output/static --compatibility-flags=nodejs_compat"
   },
   "dependencies": {
+    "@privy-io/react-auth": "^3.12.0",
     "next": "^15.1.6",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "viem": "^2.21.54"
   },
   "devDependencies": {
+    "@cloudflare/next-on-pages": "^1.13.16",
     "@tailwindcss/postcss": "^4.0.0",
     "@types/node": "^22.10.2",
     "@types/react": "^19.1.2",
@@ -27,6 +32,7 @@
     "eslint-config-next": "16.1.4",
     "postcss": "^8.4.49",
     "tailwindcss": "^4.0.0",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "wrangler": "^4.60.0"
   }
 }

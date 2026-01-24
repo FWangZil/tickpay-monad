@@ -1,25 +1,25 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { usePrivy, useWallets, useSign7702Authorization } from "@privy-io/react-auth";
 import {
-  connectWallet,
-  getWalletAddress,
-  getChainId,
-  switchToMonad,
-  setupWalletListeners,
-  createWalletClientForChain,
-  buildDelegationAuthorization,
   checkExistingDelegation,
   NEXT_PUBLIC_LOGIC_CONTRACT,
   NEXT_PUBLIC_CHAIN_ID,
 } from "@/lib/viem";
-import { signSessionRequest } from "@/lib/eip712";
 import type { Session, Address } from "@/lib/types";
 
 export default function Home() {
-  // Wallet state
+  // Relayer URL from env
+  const relayerUrl = process.env.NEXT_PUBLIC_RELAYER_URL || "https://api-tickpay.ngrok.app";
+
+  // Privy hooks
+  const { login, logout, authenticated, ready, user } = usePrivy();
+  const { wallets } = useWallets();
+  const { signAuthorization } = useSign7702Authorization();
+
+  // Wallet state (derived from Privy)
   const [walletAddress, setWalletAddress] = useState<Address | null>(null);
-  const [chainId, setChainId] = useState<number | null>(null);
   const [isCorrectChain, setIsCorrectChain] = useState(false);
 
   // Session state
@@ -41,47 +41,18 @@ export default function Home() {
   // Polling interval ref
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Setup wallet listeners on mount
+  // Update wallet address when Privy wallets change
   useEffect(() => {
-    const cleanup = setupWalletListeners({
-      onAccountsChanged: (accounts) => {
-        setWalletAddress(accounts[0] || null);
-        if (activeSessionId) {
-          stopActiveSession();
-        }
-      },
-      onChainChanged: (chainId) => {
-        setChainId(Number(chainId));
-        if (activeSessionId) {
-          stopActiveSession();
-        }
-      },
-      onDisconnect: () => {
-        setWalletAddress(null);
-        setChainId(null);
-        if (activeSessionId) {
-          stopActiveSession();
-        }
-      },
-    });
-
-    // Check initial wallet state
-    checkWalletState();
-
-    return cleanup;
-  }, []);
-
-  // Check if we're on the correct chain
-  useEffect(() => {
-    const correct = chainId === NEXT_PUBLIC_CHAIN_ID;
-    setIsCorrectChain(correct);
-
-    // Pause video if on wrong chain
-    if (!correct && videoRef.current && !videoRef.current.paused) {
-      videoRef.current.pause();
-      setIsPlaying(false);
+    if (wallets.length > 0) {
+      const embeddedWallet = wallets.find(w => w.walletClientType === 'privy') || wallets[0];
+      setWalletAddress(embeddedWallet.address as Address);
+      // Check chain - Privy handles chain switching
+      setIsCorrectChain(true); // Privy is configured for Monad Testnet
+    } else {
+      setWalletAddress(null);
+      setIsCorrectChain(false);
     }
-  }, [chainId]);
+  }, [wallets]);
 
   // Poll session status when active
   useEffect(() => {
@@ -101,34 +72,12 @@ export default function Home() {
     };
   }, [activeSessionId]);
 
-  async function checkWalletState() {
-    try {
-      const address = await getWalletAddress();
-      const chain = await getChainId();
-      setWalletAddress(address);
-      setChainId(chain);
-    } catch (error) {
-      console.error("Error checking wallet state:", error);
-    }
-  }
-
+  // Handle connect wallet with Privy
   async function handleConnectWallet() {
     try {
       setIsLoading(true);
       setError(null);
-
-      const address = await connectWallet();
-      const chain = await getChainId();
-
-      setWalletAddress(address);
-      setChainId(chain);
-
-      // Prompt to switch to Monad if not on correct chain
-      if (chain !== NEXT_PUBLIC_CHAIN_ID) {
-        await switchToMonad();
-        const newChain = await getChainId();
-        setChainId(newChain);
-      }
+      await login();
     } catch (error: any) {
       setError(error.message || "Failed to connect wallet");
     } finally {
@@ -178,7 +127,7 @@ export default function Home() {
 
       // Step 1: Create session (get EIP-712 data)
       console.log("Step 1: Creating session request...");
-      const createResponse = await fetch("/api/session/create", {
+      const createResponse = await fetch(`${relayerUrl}/api/session/create`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -194,20 +143,24 @@ export default function Home() {
         throw new Error(createData.error || "Failed to create session");
       }
 
-      // Step 2: Build EIP-7702 delegation authorization
-      console.log("Step 2: Building delegation authorization...");
-      const authorization = await buildDelegationAuthorization(
-        walletAddress,
-        NEXT_PUBLIC_LOGIC_CONTRACT
-      );
-      console.log("Delegation authorization ready");
+      // Step 2: Build EIP-7702 delegation authorization using Privy
+      console.log("Step 2: Building delegation authorization with Privy...");
+      const authorization = await signAuthorization({
+        contractAddress: NEXT_PUBLIC_LOGIC_CONTRACT,
+        chainId: NEXT_PUBLIC_CHAIN_ID,
+      }, {
+        address: walletAddress,
+      });
+      console.log("Delegation authorization ready:", authorization);
 
-      // Step 3: Sign EIP-712 data
-      console.log("Step 3: Signing request...");
+      // Step 3: Sign EIP-712 data using Privy wallet
+      console.log("Step 3: Signing request with Privy wallet...");
 
-      // Use direct window.ethereum request for maximum compatibility
-      const ethereum = (window as any).ethereum;
-      if (!ethereum) throw new Error("Wallet not found");
+      // Get the Privy wallet provider
+      const wallet = wallets.find(w => w.address.toLowerCase() === walletAddress.toLowerCase());
+      if (!wallet) throw new Error("Wallet not found");
+
+      const provider = await wallet.getEthereumProvider();
 
       const typedData = {
         domain: createData.domain,
@@ -218,7 +171,7 @@ export default function Home() {
 
       console.log("Signing typed data:", typedData);
 
-      const signature = await ethereum.request({
+      const signature = await provider.request({
         method: "eth_signTypedData_v4",
         params: [walletAddress, JSON.stringify(typedData)],
       });
@@ -226,21 +179,26 @@ export default function Home() {
 
       // Step 4: Start session (relayer sends delegation tx)
       console.log("Step 4: Starting session with relayer...");
-      const startResponse = await fetch("/api/session/start", {
+
+      // Convert BigInt values to numbers for JSON serialization
+      const authForJson = {
+        address: authorization.address,
+        chainId: Number(authorization.chainId),
+        nonce: Number(authorization.nonce),
+        r: authorization.r,
+        s: authorization.s,
+        v: authorization.v !== undefined ? Number(authorization.v) : undefined,
+        yParity: authorization.yParity !== undefined ? Number(authorization.yParity) : undefined,
+      };
+
+      const startResponse = await fetch(`${relayerUrl}/api/session/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           userAddress: walletAddress,
           signature,
           policyId: 0,
-          authorizationList: [
-            {
-              ...authorization,
-              nonce: authorization.nonce,
-              v: authorization.v,
-              yParity: authorization.yParity,
-            },
-          ],
+          authorizationList: [authForJson],
         }),
       });
 
@@ -286,7 +244,7 @@ export default function Home() {
     try {
       setIsLoading(true);
 
-      const response = await fetch("/api/session/stop", {
+      const response = await fetch(`${relayerUrl}/api/session/stop`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -311,7 +269,7 @@ export default function Home() {
 
   async function fetchSessionStatus(sessionId: string) {
     try {
-      const response = await fetch(`/api/session/status/${sessionId}`);
+      const response = await fetch(`${relayerUrl}/api/session/status/${sessionId}`);
       const data = await response.json();
 
       if (response.ok) {
@@ -390,42 +348,54 @@ export default function Home() {
 
           {/* Wallet Connection */}
           <div className="flex items-center gap-4">
-            {chainId !== null && (
-              <div className={`px-4 py-1.5 rounded-full text-xs font-semibold border backdrop-blur-md transition-colors ${
-                isCorrectChain
-                  ? "bg-green-500/10 border-green-500/20 text-green-400"
-                  : "bg-red-500/10 border-red-500/20 text-red-400"
-              }`}>
-                {isCorrectChain ? "Monad Testnet" : `Chain ID: ${chainId}`}
+            {authenticated && (
+              <div className="px-4 py-1.5 rounded-full text-xs font-semibold border backdrop-blur-md transition-colors bg-green-500/10 border-green-500/20 text-green-400">
+                Monad Testnet
               </div>
             )}
 
-            {walletAddress ? (
-              <div className="group relative">
-                <div className="bg-[#111] border border-white/10 hover:border-white/20 transition-colors px-5 py-2.5 rounded-xl flex items-center gap-3 cursor-default">
+            {authenticated && walletAddress ? (
+              <div className="group relative flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(walletAddress);
+                    alert(`Address copied: ${walletAddress}`);
+                  }}
+                  className="bg-[#111] border border-white/10 hover:border-white/20 transition-colors px-5 py-2.5 rounded-xl flex items-center gap-3 cursor-pointer hover:bg-[#1a1a1a]"
+                  title="Click to copy full address"
+                >
                   <div className="w-2 h-2 rounded-full bg-green-400 shadow-[0_0_10px_rgba(74,222,128,0.5)]"></div>
                   <span className="text-sm font-medium font-mono text-gray-200">
                     {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
                   </span>
-                </div>
+                  <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                </button>
+                <button
+                  onClick={() => logout()}
+                  className="text-xs text-gray-400 hover:text-white transition-colors"
+                >
+                  Logout
+                </button>
               </div>
             ) : (
               <button
                 onClick={handleConnectWallet}
-                disabled={isLoading}
+                disabled={isLoading || !ready}
                 className="relative overflow-hidden group bg-white text-black hover:bg-gray-100 px-6 py-2.5 rounded-xl font-semibold text-sm transition-all duration-300 shadow-[0_0_20px_rgba(255,255,255,0.1)] hover:shadow-[0_0_25px_rgba(255,255,255,0.2)] disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <span className="relative z-10 flex items-center gap-2">
-                  {isLoading ? (
+                  {isLoading || !ready ? (
                     <>
                       <svg className="animate-spin h-4 w-4 text-black" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                       </svg>
-                      Connecting...
+                      {!ready ? "Loading..." : "Connecting..."}
                     </>
                   ) : (
-                    "Connect Wallet"
+                    "Connect with Privy"
                   )}
                 </span>
               </button>

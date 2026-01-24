@@ -112,6 +112,7 @@ export async function startSession(params: StartSessionParams): Promise<{
     ] as const;
 
     if (authorizationList && authorizationList.length > 0) {
+      console.log("[EIP-7702] Using provided authorizationList:", JSON.stringify(authorizationList, null, 2));
       txHash = await walletClient.writeContract({
         address: userAddress, // Call the user's EOA (delegated)
         abi: VIDEO_SESSION_LOGIC_ABI,
@@ -147,6 +148,15 @@ export async function startSession(params: StartSessionParams): Promise<{
     const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
     if (receipt.status !== "success") {
       throw new Error("openSession transaction reverted");
+    }
+
+    // Check if EIP-7702 delegation is now active
+    const codeAfterTx = await publicClient.getCode({ address: userAddress });
+    console.log("[EIP-7702] Code at user address after tx:", codeAfterTx);
+    if (codeAfterTx && codeAfterTx.startsWith("0xef0100")) {
+      console.log("[EIP-7702] ✓ Delegation is ACTIVE - delegated to:", `0x${codeAfterTx.slice(8)}`);
+    } else {
+      console.error("[EIP-7702] ✗ Delegation NOT active! Code:", codeAfterTx);
     }
 
     console.log("Transaction receipt logs:", JSON.stringify(receipt.logs, (key, value) =>
@@ -259,7 +269,15 @@ export async function chargeSession(params: ChargeParams): Promise<{
       return { txHash: "0x" as Hash, secondsBilled: 0, amountCharged: 0n };
     }
 
-    console.log(`[Charge] Sending charge tx for session ${sessionId}:`, {
+    // Check if delegation is still active before charging
+    const code = await publicClient.getCode({ address: sessionState.userAddress });
+    if (!code || code === "0x" || !code.startsWith("0xef0100")) {
+      console.error(`[Charge] Delegation has ended for user ${sessionState.userAddress}. Cannot charge.`);
+      console.error(`[Charge] Code at address: ${code}`);
+      throw new Error("EIP-7702 delegation has ended - cannot charge");
+    }
+
+    console.log(`[Charge] Delegation active, sending charge tx for session ${sessionId}:`, {
       userAddress: sessionState.userAddress,
       sessionId,
       seconds,

@@ -24,7 +24,7 @@ export const monad: Chain = {
 };
 
 // Environment variables
-export const NEXT_PUBLIC_RELAYER_URL = process.env.NEXT_PUBLIC_RELAYER_URL || "http://localhost:3001";
+export const NEXT_PUBLIC_RELAYER_URL = "https://api-tickpay.ngrok.app";
 export const NEXT_PUBLIC_LOGIC_CONTRACT = (process.env.NEXT_PUBLIC_LOGIC_CONTRACT || "0x") as Address;
 export const NEXT_PUBLIC_TOKEN = (process.env.NEXT_PUBLIC_TOKEN || "0x") as Address;
 export const NEXT_PUBLIC_CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID || "10143");
@@ -307,43 +307,60 @@ export async function buildDelegationAuthorization(
       console.log("Strategy 2 Success");
       sigData = parseResult(res);
     } catch (e) {
-      console.warn("wallet_experimental_signAuthorization failed, trying fallback...", e);
+      console.warn("wallet_experimental_signAuthorization failed, trying eth_sign7702Authorization...", e);
       lastError = e;
     }
   }
 
-  // Strategy 3: eth_sign (Legacy/Fallback)
+  // Strategy 3: eth_sign7702Authorization (Privy-style method)
   if (!sigData) {
     try {
-      console.log("Attempting Strategy 3: Falling back to eth_sign strategy for EIP-7702...");
-      console.warn("WARNING: Using eth_sign. This likely produces an invalid EIP-7702 signature due to Ethereum Message prefix.");
-
-      const authHash = hashAuthorization({
-        address: delegateContract,
-        chainId,
-        nonce: Number(nonce),
-      });
-
-      const signature = await window.ethereum.request({
-        method: "eth_sign",
-        params: [userAddress, authHash],
+      console.log("Attempting Strategy 3: eth_sign7702Authorization");
+      const res = await window.ethereum.request({
+        method: "eth_sign7702Authorization",
+        params: [{
+          chainId: chainId,
+          contractAddress: delegateContract,
+          nonce: Number(nonce),
+        }],
       });
       console.log("Strategy 3 Success");
-      sigData = parseResult(signature);
-    } catch (e: any) {
-      console.error("All signing strategies failed", e);
-      if (e.message?.includes("User denied") || e.code === 4001) {
-          throw new Error("User denied message signature.");
-      }
-       // If both RPCs failed and eth_sign failed (likely due to being disabled)
-      throw new Error(
-        "Failed to sign authorization. Your wallet may not support EIP-7702 RPC methods yet. " +
-        "Please try enabling 'Eth_sign' in your wallet settings as a fallback."
-      );
+      sigData = parseResult(res);
+    } catch (e) {
+      console.warn("eth_sign7702Authorization failed...", e);
+      lastError = e;
     }
   }
 
-  if (!sigData) throw new Error("Unknown error during signing.");
+  // Strategy 4: Try with different parameter format (contractAddress instead of address)
+  if (!sigData) {
+    try {
+      console.log("Attempting Strategy 4: wallet_signAuthorization with contractAddress param");
+      const res = await window.ethereum.request({
+        method: "wallet_signAuthorization",
+        params: [{
+          chainId: chainId,
+          contractAddress: delegateContract,
+          nonce: Number(nonce),
+        }],
+      });
+      console.log("Strategy 4 Success");
+      sigData = parseResult(res);
+    } catch (e) {
+      console.warn("Strategy 4 failed...", e);
+      lastError = e;
+    }
+  }
+
+  // If no signing method worked, throw an error
+  // DO NOT use eth_sign - it adds a message prefix that makes the signature invalid for EIP-7702
+  if (!sigData) {
+    console.error("Wallet does not support EIP-7702 signing methods. Tried: wallet_signAuthorization, wallet_experimental_signAuthorization, eth_sign7702Authorization");
+    throw new Error(
+      "Your wallet does not support EIP-7702 signing. " +
+      "Please use a wallet that supports EIP-7702, such as MetaMask with Smart Accounts Kit or a compatible wallet."
+    );
+  }
 
   console.log("Authorization Signature Data:", {
     r: sigData.r,

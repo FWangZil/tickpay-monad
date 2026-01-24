@@ -7,3 +7,5 @@ cache/
 relayer/.env
 web/.env.local
 contracts/broadcast/*
+web/.vercel/
+web/wrangler.toml
