@@ -298,8 +298,9 @@ contract VideoSessionLogic {
         session.lastChargeAt = block.timestamp;
 
         // Transfer ERC20 tokens from user to payee
-        // User must have approved this contract to spend their tokens
-        bool success = IERC20(policy.token).transferFrom(session.user, policy.payee, amount);
+        // In EIP-7702, this code runs on user's address, so we use transfer()
+        // The user's EOA is the msg.sender to the token contract
+        bool success = IERC20(policy.token).transfer(policy.payee, amount);
         require(success, "Transfer failed");
 
         emit SessionCharged(sessionId, secondsToBill, amount);
