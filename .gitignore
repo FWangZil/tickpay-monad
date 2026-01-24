@@ -4,3 +4,5 @@ cache/
 */.next/*
 */dist/*
 .history
+relayer/.env
+web/.env.local
