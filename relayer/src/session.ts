@@ -50,14 +50,20 @@ export async function startSession(params: StartSessionParams): Promise<{
     policyId = 0n,
   } = params;
 
-  // Decode the signature to get request parameters
-  // In production, you'd get these from the API call
-  const nonce = await publicClient.readContract({
-    address: config.LOGIC_CONTRACT,
-    abi: VIDEO_SESSION_LOGIC_ABI,
-    functionName: "nonces",
-    args: [userAddress],
-  });
+  // Get nonce from user's address (EIP-7702 stores state in user's storage)
+  // Fallback to 0n for first-time users who haven't delegated yet
+  let nonce: bigint = 0n;
+  try {
+    nonce = await publicClient.readContract({
+      address: userAddress, // Read from user's address, not logic contract
+      abi: VIDEO_SESSION_LOGIC_ABI,
+      functionName: "nonces",
+      args: [userAddress],
+    }) as bigint;
+  } catch (e) {
+    console.log("Could not read nonce from user address, using 0 (first-time user)");
+    nonce = 0n;
+  }
 
   const deadline = BigInt(Math.floor(Date.now() / 1000) + 3600); // 1 hour from now
 
@@ -315,15 +321,19 @@ export async function stopSession(params: StopSessionParams): Promise<{
 }> {
   const { sessionId, userAddress, userPrivateKey } = params;
 
+  // Try to get from activeSessions, but don't require it
+  // (session may have been lost after relayer restart)
   const sessionState = activeSessions.get(sessionId);
-  if (!sessionState) {
-    throw new Error("Session not found");
+  const addressToUse = sessionState?.userAddress || userAddress;
+
+  if (!addressToUse) {
+    throw new Error("Session not found and no userAddress provided");
   }
 
   try {
-    // Close the session
+    // Close the session on the user's delegated address
     const closeTxHash = await walletClient.writeContract({
-      address: sessionState.userAddress,
+      address: addressToUse,
       abi: VIDEO_SESSION_LOGIC_ABI,
       functionName: "closeSession",
       args: [sessionId as `0x${string}`],
@@ -331,11 +341,11 @@ export async function stopSession(params: StopSessionParams): Promise<{
 
     await publicClient.waitForTransactionReceipt({ hash: closeTxHash });
 
-    // Stop charging loop
-    stopChargingLoop(sessionId);
-
-    // Remove from active sessions
-    activeSessions.delete(sessionId);
+    // Stop charging loop if exists
+    if (sessionState) {
+      stopChargingLoop(sessionId);
+      activeSessions.delete(sessionId);
+    }
 
     // Revoke delegation if private key provided
     let revokeTxHash: Hash | undefined;
@@ -358,8 +368,11 @@ export async function stopSession(params: StopSessionParams): Promise<{
 
 /**
  * Get session status from contract
+ * In EIP-7702, session data is stored on user's address, not logic contract
+ * @param sessionId - The session ID to query
+ * @param userAddress - Optional: The user's address where session data is stored
  */
-export async function getSessionStatus(sessionId: string): Promise<{
+export async function getSessionStatus(sessionId: string, userAddress?: Address): Promise<{
   user: Address;
   policyId: bigint;
   startedAt: bigint;
@@ -368,9 +381,18 @@ export async function getSessionStatus(sessionId: string): Promise<{
   lastChargeAt: bigint;
   closed: boolean;
 } | null> {
+  // If no userAddress provided, try to get from activeSessions
+  const activeSession = activeSessions.get(sessionId);
+  const addressToQuery = userAddress || activeSession?.userAddress;
+
+  if (!addressToQuery) {
+    console.log("No user address available to query session status");
+    return null;
+  }
+
   try {
     const session = await publicClient.readContract({
-      address: config.LOGIC_CONTRACT,
+      address: addressToQuery, // Read from user's address (EIP-7702 storage)
       abi: VIDEO_SESSION_LOGIC_ABI,
       functionName: "getSession",
       args: [sessionId as `0x${string}`],

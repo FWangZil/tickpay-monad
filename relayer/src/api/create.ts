@@ -16,20 +16,29 @@ export async function createSession(req: Request, res: Response): Promise<void> 
     }
 
     // Get current nonce for user
-    const nonce = await publicClient.readContract({
-      address: config.LOGIC_CONTRACT,
-      abi: [
-        {
-          type: "function",
-          name: "nonces",
-          stateMutability: "view",
-          inputs: [{ name: "", type: "address" }],
-          outputs: [{ name: "", type: "uint256" }],
-        },
-      ],
-      functionName: "nonces",
-      args: [userAddress],
-    });
+    // In EIP-7702, nonces are stored in user's address storage, not logic contract
+    // Try to read from user's address first, default to 0n for first-time users
+    let nonce: bigint = 0n;
+    try {
+      nonce = await publicClient.readContract({
+        address: userAddress, // Read from user's address (where EIP-7702 stores state)
+        abi: [
+          {
+            type: "function",
+            name: "nonces",
+            stateMutability: "view",
+            inputs: [{ name: "", type: "address" }],
+            outputs: [{ name: "", type: "uint256" }],
+          },
+        ],
+        functionName: "nonces",
+        args: [userAddress],
+      }) as bigint;
+    } catch (e) {
+      // User hasn't delegated yet or first time - use nonce 0
+      console.log("Could not read nonce from user address, using 0 (first-time user)");
+      nonce = 0n;
+    }
 
     // Create session request
     const policyIdToUse = policyId ? BigInt(policyId) : 0n;
