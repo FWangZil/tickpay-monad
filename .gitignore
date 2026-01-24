@@ -6,3 +6,4 @@ cache/
 .history
 relayer/.env
 web/.env.local
+contracts/broadcast/*

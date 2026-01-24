@@ -2,14 +2,14 @@ import { createPublicClient, createWalletClient, custom, http, type Address, typ
 
 // Monad chain configuration
 export const monad: Chain = {
-  id: 143,
-  name: "Monad",
+  id: 10143,
+  name: "Monad Testnet",
   nativeCurrency: { name: "MON", symbol: "MON", decimals: 18 },
   rpcUrls: {
-    default: { http: [process.env.NEXT_PUBLIC_RPC_URL || "https://rpc.monad.xyz"] },
+    default: { http: [process.env.NEXT_PUBLIC_RPC_URL || "https://testnet-rpc.monad.xyz"] },
   },
   blockExplorers: {
-    default: { name: "Monad Explorer", url: "https://explorer.monad.xyz" },
+    default: { name: "Monad Explorer", url: "https://testnet.monadexplorer.com" },
   },
 };
 
@@ -17,7 +17,7 @@ export const monad: Chain = {
 export const NEXT_PUBLIC_RELAYER_URL = process.env.NEXT_PUBLIC_RELAYER_URL || "http://localhost:3001";
 export const NEXT_PUBLIC_LOGIC_CONTRACT = (process.env.NEXT_PUBLIC_LOGIC_CONTRACT || "0x") as Address;
 export const NEXT_PUBLIC_TOKEN = (process.env.NEXT_PUBLIC_TOKEN || "0x") as Address;
-export const NEXT_PUBLIC_CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID || "143");
+export const NEXT_PUBLIC_CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID || "10143");
 
 /**
  * Create a public client for read operations
