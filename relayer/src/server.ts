@@ -4,6 +4,7 @@ import { createSession } from "./api/create.js";
 import { startSessionHandler } from "./api/start.js";
 import { stopSessionHandler } from "./api/stop.js";
 import { getSessionStatusHandler, getActiveSessionsHandler } from "./api/status.js";
+import { faucetHandler } from "./api/faucet.js";
 
 export function createServer(): Express {
   const app = express();
@@ -31,6 +32,9 @@ export function createServer(): Express {
   app.post("/api/session/stop", stopSessionHandler);
   app.get("/api/session/status/:sessionId", getSessionStatusHandler);
   app.get("/api/sessions/active", getActiveSessionsHandler);
+
+  // Faucet
+  app.post("/api/faucet", faucetHandler);
 
   // 404 handler
   app.use((req: Request, res: Response) => {

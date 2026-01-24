@@ -33,6 +33,10 @@ export default function Home() {
   const [existingDelegation, setExistingDelegation] = useState<Address | null>(null);
   const [showDelegationWarning, setShowDelegationWarning] = useState(false);
 
+  // Faucet state
+  const [isFaucetLoading, setIsFaucetLoading] = useState(false);
+  const [tokenBalance, setTokenBalance] = useState<string | null>(null);
+
   // Video state
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -83,6 +87,38 @@ export default function Home() {
       setError(error.message || "Failed to connect wallet");
     } finally {
       setIsLoading(false);
+    }
+  }
+
+  // Handle faucet request
+  async function handleFaucet() {
+    if (!walletAddress || isFaucetLoading) return;
+
+    try {
+      setIsFaucetLoading(true);
+      setError(null);
+
+      const response = await fetch(`${relayerUrl}/api/faucet`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: walletAddress }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to get tokens");
+      }
+
+      // Update balance display
+      const balanceInTokens = (Number(data.balanceAfter) / 1e18).toFixed(2);
+      setTokenBalance(balanceInTokens);
+
+      console.log("Faucet success:", data);
+    } catch (error: any) {
+      setError(error.message || "Failed to get tokens from faucet");
+    } finally {
+      setIsFaucetLoading(false);
     }
   }
 
@@ -600,6 +636,54 @@ export default function Home() {
 
           {/* Right Column: Stats & Info */}
           <div className="lg:col-span-4 space-y-6">
+
+            {/* Token Faucet Card */}
+            {authenticated && walletAddress && (
+              <div className="bg-gradient-to-br from-purple-500/10 to-blue-500/10 backdrop-blur-xl border border-purple-500/20 rounded-2xl p-6 shadow-xl">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-purple-500/20 rounded-lg text-purple-400">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-lg">TICK Faucet</h3>
+                      <p className="text-xs text-gray-400">Get test tokens</p>
+                    </div>
+                  </div>
+                  {tokenBalance && (
+                    <div className="text-right">
+                      <p className="text-xs text-gray-400">Balance</p>
+                      <p className="text-lg font-bold text-purple-400">{tokenBalance} <span className="text-xs">TICK</span></p>
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  onClick={handleFaucet}
+                  disabled={isFaucetLoading}
+                  className="w-full bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-400 hover:to-blue-400 disabled:from-gray-600 disabled:to-gray-600 text-white px-6 py-3 rounded-xl font-bold text-sm shadow-lg shadow-purple-900/20 transition-all flex items-center justify-center gap-2"
+                >
+                  {isFaucetLoading ? (
+                    <>
+                      <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Minting...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                      </svg>
+                      Get 10 TICK Tokens
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
 
             {/* Stats Card */}
             <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-xl">
