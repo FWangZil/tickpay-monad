@@ -270,12 +270,12 @@ export default function Home() {
   }
 
   // Format values for display
-  function formatTokenAmount(amount: string): string {
+  function formatTokenAmount(amount: string | bigint): string {
     const value = Number(amount) / 1e18; // Assuming 18 decimals
     return value.toFixed(4);
   }
 
-  function formatTime(seconds: string): string {
+  function formatTime(seconds: string | bigint): string {
     const totalSeconds = Number(seconds);
     const minutes = Math.floor(totalSeconds / 60);
     const remainingSeconds = totalSeconds % 60;

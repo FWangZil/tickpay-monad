@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
-import { getSessionStatus, activeSessions } from "../session.js";
+import { getSessionStatus } from "../session.js";
+import { activeSessions, type SessionState } from "../client.js";
 
 /**
  * GET /api/session/status/:sessionId
@@ -8,21 +9,22 @@ import { getSessionStatus, activeSessions } from "../session.js";
 export async function getSessionStatusHandler(req: Request, res: Response): Promise<void> {
   try {
     const { sessionId } = req.params;
+    const id = Array.isArray(sessionId) ? sessionId[0] : sessionId;
 
-    if (!sessionId) {
+    if (!id) {
       res.status(400).json({ error: "sessionId is required" });
       return;
     }
 
     // Get session from contract
-    const status = await getSessionStatus(sessionId);
+    const status = await getSessionStatus(id);
 
     // Check if session is actively charging
-    const activeSession = activeSessions.get(sessionId);
+    const activeSession = activeSessions.get(id);
 
     res.json({
       success: true,
-      sessionId,
+      sessionId: id,
       user: status.user,
       policyId: status.policyId.toString(),
       startedAt: status.startedAt.toString(),
@@ -47,7 +49,7 @@ export async function getSessionStatusHandler(req: Request, res: Response): Prom
  */
 export async function getActiveSessionsHandler(req: Request, res: Response): Promise<void> {
   try {
-    const sessions = Array.from(activeSessions.values()).map((s) => ({
+    const sessions = Array.from(activeSessions.values()).map((s: SessionState) => ({
       sessionId: s.sessionId,
       userAddress: s.userAddress,
       policyId: s.policyId.toString(),

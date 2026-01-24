@@ -1,5 +1,8 @@
 import type { Address } from "viem";
 
+// Re-export Address for convenience
+export type { Address };
+
 /**
  * Session information from the contract
  */

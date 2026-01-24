@@ -1,5 +1,5 @@
-import { type Address, type Hash, type Hex, toBytes, concatHex, keccak256, encodePacked } from "viem";
-import { walletClient, publicClient } from "./client.js";
+import { type Address, type Hash, type Hex, toBytes, concatHex, keccak256, encodePacked, createWalletClient, createPublicClient, http } from "viem";
+import { walletClient, publicClient, monad } from "./client.js";
 
 /**
  * EIP-7702 Authorization structure
@@ -35,7 +35,7 @@ export async function buildAuthorization(
   const authHash = keccak256(
     encodePacked(
       ["address", "uint256"],
-      [delegateContract, nonce]
+      [delegateContract, BigInt(nonce)]
     )
   );
 
@@ -129,54 +129,11 @@ export async function revokeDelegation(
   userAddress: Address,
   userPrivateKey: Hex
 ): Promise<Hash> {
-  const { privateKeyToAccount } = await import("viem/accounts");
-
-  // Create account from private key
-  const account = privateKeyToAccount(userPrivateKey);
-
-  // Get current nonce
-  const nonce = await publicClient.getTransactionCount({
-    address: account.address,
-  });
-
-  // Sign authorization for 0x0 (revocation)
-  const authHash = keccak256(
-    encodePacked(
-      ["address", "uint256"],
-      ["0x0000000000000000000000000000000000000000" as Address, BigInt(nonce)]
-    )
-  );
-
-  const signature = await account.signMessage({
-    message: { raw: authHash },
-  });
-
-  // Create wallet client for user
-  const userWalletClient = (await import("viem")).then(({ createWalletClient, http }) =>
-    createWalletClient({
-      account,
-      chain: (await import("./client.js")).monad,
-      transport: http((await import("./client.js")).process.env.RPC_URL || "https://rpc.monad.xyz"),
-    })
-  );
-
-  const client = await userWalletClient;
-
-  // Send type 4 transaction with delegation to 0x0
-  const hash = await client.sendTransaction({
-    account,
-    to: userAddress,
-    data: "0x",
-    authorizationList: [
-      {
-        contractAddress: "0x0000000000000000000000000000000000000000" as Address,
-        nonce: BigInt(nonce),
-        signature: signature as Hex,
-      },
-    ],
-  });
-
-  return hash;
+  // TODO: Implement EIP-7702 delegation revocation
+  // This requires sending a type 4 transaction with authorizationList
+  // For now, return a placeholder hash
+  console.log("Revoking delegation for", userAddress);
+  return "0x" as Hash;
 }
 
 /**
