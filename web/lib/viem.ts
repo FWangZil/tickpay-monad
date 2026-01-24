@@ -205,6 +205,31 @@ export interface Authorization {
   yParity?: number;
 }
 
+/**
+ * Check if an address has an existing EIP-7702 delegation
+ * EIP-7702 delegated accounts have code starting with 0xef0100 followed by the delegate address
+ * @returns The delegate contract address if delegated, null otherwise
+ */
+export async function checkExistingDelegation(userAddress: Address): Promise<Address | null> {
+  try {
+    const publicClient = createPublicClientForChain();
+    const code = await publicClient.getCode({ address: userAddress });
+
+    // EIP-7702 delegation code format: 0xef0100 + 20-byte address (total 23 bytes = 46 hex chars + 0x prefix)
+    // Example: 0xef0100<delegateAddress>
+    if (code && code.startsWith("0xef0100") && code.length === 48) {
+      const delegateAddress = `0x${code.slice(8)}` as Address;
+      console.log("Found existing delegation to:", delegateAddress);
+      return delegateAddress;
+    }
+
+    return null;
+  } catch (error) {
+    console.error("Error checking delegation:", error);
+    return null;
+  }
+}
+
 export async function buildDelegationAuthorization(
   userAddress: Address,
   delegateContract: Address

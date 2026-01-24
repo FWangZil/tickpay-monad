@@ -9,6 +9,7 @@ import {
   setupWalletListeners,
   createWalletClientForChain,
   buildDelegationAuthorization,
+  checkExistingDelegation,
   NEXT_PUBLIC_LOGIC_CONTRACT,
   NEXT_PUBLIC_CHAIN_ID,
 } from "@/lib/viem";
@@ -26,6 +27,10 @@ export default function Home() {
   const [sessionStatus, setSessionStatus] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Delegation state
+  const [existingDelegation, setExistingDelegation] = useState<Address | null>(null);
+  const [showDelegationWarning, setShowDelegationWarning] = useState(false);
 
   // Video state
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -131,7 +136,7 @@ export default function Home() {
     }
   }
 
-  async function handleStartWatching() {
+  async function handleStartWatching(skipDelegationCheck = false) {
     if (startInProgressRef.current || activeSessionId) {
       return;
     }
@@ -152,6 +157,24 @@ export default function Home() {
     try {
       setIsLoading(true);
       setError(null);
+
+      // Step 0: Check for existing delegation (unless skipped)
+      if (!skipDelegationCheck) {
+        console.log("Checking for existing delegation...");
+        const existingDelegate = await checkExistingDelegation(walletAddress);
+        if (existingDelegate) {
+          console.log("Found existing delegation:", existingDelegate);
+          setExistingDelegation(existingDelegate);
+          setShowDelegationWarning(true);
+          setIsLoading(false);
+          startInProgressRef.current = false;
+          // Pause video while showing warning
+          if (videoRef.current && !videoRef.current.paused) {
+            videoRef.current.pause();
+          }
+          return;
+        }
+      }
 
       // Step 1: Create session (get EIP-712 data)
       console.log("Step 1: Creating session request...");
@@ -420,6 +443,66 @@ export default function Home() {
           </div>
         )}
 
+        {/* Existing Delegation Warning Modal */}
+        {showDelegationWarning && existingDelegation && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50">
+            <div className="bg-[#111] border border-white/10 rounded-2xl p-6 max-w-md mx-4 shadow-2xl">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2 bg-yellow-500/20 rounded-lg text-yellow-400">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-bold text-white">Existing Delegation Found</h3>
+              </div>
+
+              <p className="text-gray-300 text-sm mb-4">
+                Your wallet already has an active EIP-7702 delegation. You need to revoke it before starting a new session.
+              </p>
+
+              <div className="bg-black/30 rounded-lg p-3 mb-6">
+                <p className="text-xs text-gray-400 mb-1">Current delegate contract:</p>
+                <p className="font-mono text-xs text-purple-400 break-all">{existingDelegation}</p>
+                {existingDelegation.toLowerCase() === NEXT_PUBLIC_LOGIC_CONTRACT.toLowerCase() && (
+                  <p className="text-xs text-green-400 mt-2">✓ This is the TickPay contract</p>
+                )}
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setShowDelegationWarning(false);
+                    setExistingDelegation(null);
+                  }}
+                  className="flex-1 px-4 py-2.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 text-sm font-medium transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={async () => {
+                    setShowDelegationWarning(false);
+                    // If it's the same contract, user might just want to continue
+                    if (existingDelegation.toLowerCase() === NEXT_PUBLIC_LOGIC_CONTRACT.toLowerCase()) {
+                      // Skip delegation check and proceed
+                      setExistingDelegation(null);
+                      handleStartWatching(true);
+                    } else {
+                      // Different contract - need to revoke first
+                      setError("Please revoke the existing delegation in your wallet settings first, or stop the previous session.");
+                      setExistingDelegation(null);
+                    }
+                  }}
+                  className="flex-1 px-4 py-2.5 rounded-lg bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-400 hover:to-blue-400 text-white text-sm font-bold transition-all"
+                >
+                  {existingDelegation.toLowerCase() === NEXT_PUBLIC_LOGIC_CONTRACT.toLowerCase()
+                    ? "Continue Anyway"
+                    : "I Understand"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Main Grid */}
         <div className="grid lg:grid-cols-12 gap-8 lg:gap-12">
 
@@ -486,7 +569,7 @@ export default function Home() {
                     <div className="flex-shrink-0">
                       {!activeSessionId ? (
                         <button
-                          onClick={handleStartWatching}
+                          onClick={() => handleStartWatching()}
                           disabled={isLoading}
                           className="w-full sm:w-auto bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500 text-white px-6 py-2.5 rounded-lg font-bold text-sm shadow-lg shadow-green-900/20 transition-all flex items-center justify-center gap-2"
                         >
