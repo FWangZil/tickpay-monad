@@ -7,6 +7,7 @@ import {
   getChainId,
   switchToMonad,
   setupWalletListeners,
+  createWalletClientForChain,
   NEXT_PUBLIC_LOGIC_CONTRACT,
   NEXT_PUBLIC_CHAIN_ID,
 } from "@/lib/viem";
@@ -129,6 +130,7 @@ export default function Home() {
   }
 
   async function handleStartWatching() {
+    console.log("handleStartWatching called", { walletAddress, isCorrectChain });
     if (!walletAddress) {
       setError("Please connect your wallet first");
       return;
@@ -144,6 +146,7 @@ export default function Home() {
       setError(null);
 
       // Step 1: Create session (get EIP-712 data)
+      console.log("Step 1: Creating session request...");
       const createResponse = await fetch("/api/session/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -154,18 +157,36 @@ export default function Home() {
       });
 
       const createData = await createResponse.json();
+      console.log("Session created:", createData);
+
       if (!createResponse.ok) {
         throw new Error(createData.error || "Failed to create session");
       }
 
       // Step 2: Sign EIP-712 data
-      const walletClient = (window as any).ethereum;
-      const signature = await walletClient.request({
+      console.log("Step 2: Signing request...");
+
+      // Use direct window.ethereum request for maximum compatibility
+      const ethereum = (window as any).ethereum;
+      if (!ethereum) throw new Error("Wallet not found");
+
+      const typedData = {
+        domain: createData.domain,
+        types: createData.types,
+        primaryType: "SessionRequest",
+        message: createData.message,
+      };
+
+      console.log("Signing typed data:", typedData);
+
+      const signature = await ethereum.request({
         method: "eth_signTypedData_v4",
-        params: [walletAddress, JSON.stringify(createData.types)],
+        params: [walletAddress, JSON.stringify(typedData)],
       });
+      console.log("Signature received:", signature);
 
       // Step 3: Start session (relayer sends delegation tx)
+      console.log("Step 3: Starting session with relayer...");
       const startResponse = await fetch("/api/session/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -177,6 +198,8 @@ export default function Home() {
       });
 
       const startData = await startResponse.json();
+      console.log("Session started:", startData);
+
       if (!startResponse.ok) {
         throw new Error(startData.error || "Failed to start session");
       }
@@ -188,6 +211,7 @@ export default function Home() {
         videoRef.current.play();
       }
     } catch (error: any) {
+      console.error("Error in handleStartWatching:", error);
       setError(error.message || "Failed to start session");
     } finally {
       setIsLoading(false);

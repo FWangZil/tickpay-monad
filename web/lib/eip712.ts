@@ -1,7 +1,7 @@
 import { type Address, hashTypedData, type Hex } from "viem";
 
 // Environment variables
-const NEXT_PUBLIC_CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID || "143");
+const NEXT_PUBLIC_CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID || "10143");
 const NEXT_PUBLIC_LOGIC_CONTRACT = (process.env.NEXT_PUBLIC_LOGIC_CONTRACT || "0x") as Address;
 
 // EIP-712 Domain

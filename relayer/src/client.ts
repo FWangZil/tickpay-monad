@@ -3,20 +3,20 @@ import { privateKeyToAccount } from "viem/accounts";
 
 // Monad chain configuration
 export const monad: Chain = {
-  id: 143,
-  name: "Monad",
+  id: 10143,
+  name: "Monad Testnet",
   nativeCurrency: { name: "MON", symbol: "MON", decimals: 18 },
   rpcUrls: {
-    default: { http: [process.env.RPC_URL || "https://rpc.monad.xyz"] },
+    default: { http: [process.env.RPC_URL || "https://testnet-rpc.monad.xyz"] },
   },
   blockExplorers: {
-    default: { name: "Monad Explorer", url: "https://explorer.monad.xyz" },
+    default: { name: "Monad Explorer", url: "https://testnet.monadexplorer.com" },
   },
 };
 
 // Environment variables
-const RPC_URL = process.env.RPC_URL || "https://rpc.monad.xyz";
-const CHAIN_ID = Number(process.env.CHAIN_ID || "143");
+const RPC_URL = process.env.RPC_URL || "https://testnet-rpc.monad.xyz";
+const CHAIN_ID = Number(process.env.CHAIN_ID || "10143");
 const RELAYER_PRIVATE_KEY = process.env.RELAYER_PRIVATE_KEY || "";
 const LOGIC_CONTRACT = (process.env.LOGIC_CONTRACT || "0x") as Address;
 const TOKEN = (process.env.TOKEN || "0x") as Address;
