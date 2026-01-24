@@ -3,6 +3,8 @@ import {
   type Hash,
   type Hex,
   decodeErrorResult,
+  encodePacked,
+  keccak256,
   type TransactionReceipt,
   parseEventLogs,
 } from "viem";
@@ -88,21 +90,37 @@ export async function startSession(params: StartSessionParams): Promise<{
 
     // Wait for transaction
     const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+    if (receipt.status !== "success") {
+      throw new Error("openSession transaction reverted");
+    }
 
-    // Parse SessionOpened event to get sessionId
-    // For simplicity, use tx hash as sessionId if event parsing fails
-    const sessionOpenedLog = receipt.logs.find((log) =>
-      log.topics[0] === "0x" // SessionOpened event topic (simplified)
-    );
+    // Parse SessionOpened event to get the actual sessionId
+    const events = parseEventLogs({
+      abi: VIDEO_SESSION_LOGIC_ABI,
+      logs: receipt.logs,
+      eventName: "SessionOpened",
+    });
 
-    let sessionId = "";
-    if (sessionOpenedLog) {
-      // Extract sessionId from log data (simplified approach)
-      // In production, you'd properly parse the event
-      sessionId = txHash;
-    } else {
-      // Fallback: generate sessionId from tx hash
-      sessionId = txHash;
+    let sessionId = events[0]?.args?.sessionId as string | undefined;
+    if (!sessionId) {
+      const [sessionCount, block] = await Promise.all([
+        publicClient.readContract({
+          address: config.LOGIC_CONTRACT,
+          abi: VIDEO_SESSION_LOGIC_ABI,
+          functionName: "sessionCount",
+        }),
+        publicClient.getBlock({ blockNumber: receipt.blockNumber }),
+      ]);
+      const lastId = (sessionCount as bigint) - 1n;
+      if (lastId < 0n) {
+        throw new Error("SessionOpened event not found");
+      }
+      sessionId = keccak256(
+        encodePacked(
+          ["uint256", "address", "uint256"],
+          [lastId, userAddress, block.timestamp],
+        ),
+      );
     }
 
     // Store session state
@@ -259,7 +277,7 @@ export async function getSessionStatus(sessionId: string): Promise<{
   chargedAmount: bigint;
   lastChargeAt: bigint;
   closed: boolean;
-}> {
+} | null> {
   try {
     const session = await publicClient.readContract({
       address: config.LOGIC_CONTRACT,
@@ -278,6 +296,13 @@ export async function getSessionStatus(sessionId: string): Promise<{
       closed: boolean;
     };
   } catch (error) {
+    const message =
+      (error as { shortMessage?: string })?.shortMessage ??
+      (error as { cause?: { shortMessage?: string } })?.cause?.shortMessage ??
+      (error as Error).message;
+    if (typeof message === "string" && message.includes("Session not found")) {
+      return null;
+    }
     console.error("Error getting session status:", error);
     throw error;
   }

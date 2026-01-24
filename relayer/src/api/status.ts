@@ -18,6 +18,14 @@ export async function getSessionStatusHandler(req: Request, res: Response): Prom
 
     // Get session from contract
     const status = await getSessionStatus(id);
+    if (!status) {
+      res.status(404).json({
+        error: "Session not found",
+        sessionId: id,
+        activelyCharging: false,
+      });
+      return;
+    }
 
     // Check if session is actively charging
     const activeSession = activeSessions.get(id);

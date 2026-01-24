@@ -92,6 +92,13 @@ export const VIDEO_SESSION_LOGIC_ABI = [
     inputs: [{ name: "", type: "address" }],
     outputs: [{ name: "", type: "uint256" }],
   },
+  {
+    type: "function",
+    name: "sessionCount",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+  },
   // Write functions
   {
     type: "function",
