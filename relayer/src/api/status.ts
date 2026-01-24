@@ -4,7 +4,9 @@ import { activeSessions, type SessionState } from "../client.js";
 
 /**
  * GET /api/session/status/:sessionId
- * Get session status from contract
+ * Get session status - primarily from in-memory activeSessions
+ * Note: In EIP-7702, session data is stored in user's address, not the logic contract.
+ * After delegation ends, we can't read from user's address, so we use in-memory data.
  */
 export async function getSessionStatusHandler(req: Request, res: Response): Promise<void> {
   try {
@@ -16,31 +18,58 @@ export async function getSessionStatusHandler(req: Request, res: Response): Prom
       return;
     }
 
-    // Get session from contract
-    const status = await getSessionStatus(id);
-    if (!status) {
-      res.status(404).json({
-        error: "Session not found",
+    // First check in-memory active sessions
+    const activeSession = activeSessions.get(id);
+
+    if (activeSession) {
+      // Calculate estimated charged amount based on elapsed time
+      const now = Math.floor(Date.now() / 1000);
+      const elapsedSeconds = now - activeSession.startedAt;
+      const ratePerSecond = BigInt(process.env.RATE_PER_SECOND || "1000000000000000");
+      const estimatedCharged = BigInt(elapsedSeconds) * ratePerSecond;
+
+      res.json({
+        success: true,
         sessionId: id,
-        activelyCharging: false,
+        user: activeSession.userAddress,
+        policyId: activeSession.policyId.toString(),
+        startedAt: activeSession.startedAt.toString(),
+        chargedSeconds: elapsedSeconds.toString(),
+        chargedAmount: estimatedCharged.toString(),
+        lastChargeAt: activeSession.lastChargeAt.toString(),
+        closed: false,
+        activelyCharging: !!activeSession.intervalId,
       });
       return;
     }
 
-    // Check if session is actively charging
-    const activeSession = activeSessions.get(id);
+    // Try to get from contract (may fail if EIP-7702 delegation ended)
+    try {
+      const status = await getSessionStatus(id);
+      if (status) {
+        res.json({
+          success: true,
+          sessionId: id,
+          user: status.user,
+          policyId: status.policyId.toString(),
+          startedAt: status.startedAt.toString(),
+          chargedSeconds: status.chargedSeconds.toString(),
+          chargedAmount: status.chargedAmount.toString(),
+          lastChargeAt: status.lastChargeAt.toString(),
+          closed: status.closed,
+          activelyCharging: false,
+        });
+        return;
+      }
+    } catch (contractError) {
+      console.log("Could not read session from contract (EIP-7702 delegation may have ended)");
+    }
 
-    res.json({
-      success: true,
+    // Session not found in memory or contract
+    res.status(404).json({
+      error: "Session not found",
       sessionId: id,
-      user: status.user,
-      policyId: status.policyId.toString(),
-      startedAt: status.startedAt.toString(),
-      chargedSeconds: status.chargedSeconds.toString(),
-      chargedAmount: status.chargedAmount.toString(),
-      lastChargeAt: status.lastChargeAt.toString(),
-      closed: status.closed,
-      activelyCharging: !!activeSession,
+      activelyCharging: false,
     });
   } catch (error) {
     console.error("Error in getSessionStatus:", error);

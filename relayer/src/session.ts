@@ -8,7 +8,7 @@ import {
   type TransactionReceipt,
   parseEventLogs,
 } from "viem";
-import { publicClient, walletClient, VIDEO_SESSION_LOGIC_ABI, config, activeSessions, type SessionState } from "./client.js";
+import { publicClient, walletClient, VIDEO_SESSION_LOGIC_ABI, config, activeSessions, keeperAccount, type SessionState } from "./client.js";
 import { buildAuthorization, type Authorization } from "./tx7702.js";
 
 export interface StartSessionParams {
@@ -69,15 +69,48 @@ export async function startSession(params: StartSessionParams): Promise<{
     deadline,
   };
 
+  // Policy parameters - use env config for default policy
+  const policyParams = {
+    keeper: keeperAccount.address,
+    token: config.TOKEN,
+    payee: config.PAYEE,
+    ratePerSecond: config.RATE_PER_SECOND,
+    maxCost: BigInt(process.env.MAX_COST || "1000000000000000000000"), // 1000 tokens default
+    maxSeconds: BigInt(process.env.MAX_SECONDS || "3600"), // 1 hour default
+    expiry: BigInt(Math.floor(Date.now() / 1000) + 86400 * 30), // 30 days from now
+  };
+
+  console.log("[Session] Opening session with policy:", {
+    userAddress,
+    policyId: policyId.toString(),
+    keeper: policyParams.keeper,
+    token: policyParams.token,
+    payee: policyParams.payee,
+    ratePerSecond: policyParams.ratePerSecond.toString(),
+  });
+
   try {
     let txHash: Hash;
+
+    // Use openSessionWithPolicy to create policy in user's storage (EIP-7702)
+    const contractArgs = [
+      request,
+      userSignature,
+      policyParams.keeper,
+      policyParams.token,
+      policyParams.payee,
+      policyParams.ratePerSecond,
+      policyParams.maxCost,
+      policyParams.maxSeconds,
+      policyParams.expiry,
+    ] as const;
 
     if (authorizationList && authorizationList.length > 0) {
       txHash = await walletClient.writeContract({
         address: userAddress, // Call the user's EOA (delegated)
         abi: VIDEO_SESSION_LOGIC_ABI,
-        functionName: "openSession",
-        args: [request, userSignature],
+        functionName: "openSessionWithPolicy",
+        args: contractArgs,
         // @ts-ignore - viem supports authorizationList in type 4
         authorizationList,
       });
@@ -89,8 +122,8 @@ export async function startSession(params: StartSessionParams): Promise<{
       txHash = await walletClient.writeContract({
         address: userAddress, // Call the user's EOA (delegated)
         abi: VIDEO_SESSION_LOGIC_ABI,
-        functionName: "openSession",
-        args: [request, userSignature],
+        functionName: "openSessionWithPolicy",
+        args: contractArgs,
         authorizationList: [auth as any],
       });
     } else {
@@ -99,8 +132,8 @@ export async function startSession(params: StartSessionParams): Promise<{
       txHash = await walletClient.writeContract({
         address: userAddress,
         abi: VIDEO_SESSION_LOGIC_ABI,
-        functionName: "openSession",
-        args: [request, userSignature],
+        functionName: "openSessionWithPolicy",
+        args: contractArgs,
       });
     }
 
@@ -208,18 +241,23 @@ export async function chargeSession(params: ChargeParams): Promise<{
   try {
     // Calculate seconds to bill if not provided
     let seconds = secondsToBill;
-    let lastChargeTime = sessionState.lastChargeAt;
 
     if (!seconds) {
       const now = Math.floor(Date.now() / 1000);
       seconds = now - sessionState.lastChargeAt;
-      lastChargeTime = now;
     }
 
     // Don't charge if less than 1 second
     if (seconds < 1) {
+      console.log(`[Charge] Skipping charge for session ${sessionId}: less than 1 second elapsed`);
       return { txHash: "0x" as Hash, secondsBilled: 0, amountCharged: 0n };
     }
+
+    console.log(`[Charge] Sending charge tx for session ${sessionId}:`, {
+      userAddress: sessionState.userAddress,
+      sessionId,
+      seconds,
+    });
 
     // Send charge transaction
     const txHash = await walletClient.writeContract({
@@ -229,8 +267,14 @@ export async function chargeSession(params: ChargeParams): Promise<{
       args: [sessionId as `0x${string}`, BigInt(seconds)],
     });
 
+    console.log(`[Charge] Charge tx sent: ${txHash}, waiting for receipt...`);
+
     // Wait for transaction
     const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+    console.log(`[Charge] Charge tx confirmed, status: ${receipt.status}`);
+
+    // Update lastChargeAt
+    sessionState.lastChargeAt = Math.floor(Date.now() / 1000);
 
     // Simplified: assume amount based on seconds and rate
     const amountCharged = BigInt(seconds || 0) * config.RATE_PER_SECOND;
@@ -359,12 +403,19 @@ export async function getSessionStatus(sessionId: string): Promise<{
  */
 function startChargingLoop(sessionId: string): void {
   const intervalMs = config.CHARGE_INTERVAL_SEC * 1000;
+  console.log(`[Charge] Starting charging loop for session ${sessionId}, interval: ${intervalMs}ms`);
 
   const intervalId = setInterval(async () => {
+    console.log(`[Charge] Attempting to charge session ${sessionId}...`);
     try {
-      await chargeSession({ sessionId });
+      const result = await chargeSession({ sessionId });
+      console.log(`[Charge] Successfully charged session ${sessionId}:`, {
+        txHash: result.txHash,
+        secondsBilled: result.secondsBilled,
+        amountCharged: result.amountCharged.toString(),
+      });
     } catch (error) {
-      console.error(`Error in charging loop for session ${sessionId}:`, error);
+      console.error(`[Charge] Error in charging loop for session ${sessionId}:`, error);
       // Stop the loop on error
       stopChargingLoop(sessionId);
     }

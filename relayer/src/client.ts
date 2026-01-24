@@ -121,6 +121,32 @@ export const VIDEO_SESSION_LOGIC_ABI = [
   },
   {
     type: "function",
+    name: "openSessionWithPolicy",
+    stateMutability: "nonpayable",
+    inputs: [
+      {
+        name: "request",
+        type: "tuple",
+        components: [
+          { name: "user", type: "address" },
+          { name: "policyId", type: "uint256" },
+          { name: "nonce", type: "uint256" },
+          { name: "deadline", type: "uint256" },
+        ],
+      },
+      { name: "signature", type: "bytes" },
+      { name: "keeper", type: "address" },
+      { name: "token", type: "address" },
+      { name: "payee", type: "address" },
+      { name: "ratePerSecond", type: "uint256" },
+      { name: "maxCost", type: "uint256" },
+      { name: "maxSeconds", type: "uint256" },
+      { name: "expiry", type: "uint256" },
+    ],
+    outputs: [{ name: "sessionId", type: "bytes32" }],
+  },
+  {
+    type: "function",
     name: "charge",
     stateMutability: "nonpayable",
     inputs: [

@@ -190,6 +190,84 @@ contract VideoSessionLogic {
         emit SessionOpened(sessionId, msg.sender, request.policyId);
     }
 
+    /// @notice Open a new billing session with inline policy creation
+    /// @dev For EIP-7702: creates policy in user's storage and opens session in one tx
+    /// @param request Session parameters
+    /// @param signature EIP-712 signature from user
+    /// @param keeper Authorized relayer address
+    /// @param token ERC20 token for payments
+    /// @param payee Payment recipient
+    /// @param ratePerSecond Billing rate per second
+    /// @param maxCost Maximum total charge per session
+    /// @param maxSeconds Maximum seconds per session
+    /// @param expiry Policy expiration timestamp
+    /// @return sessionId The newly created session ID
+    function openSessionWithPolicy(
+        SessionRequest calldata request,
+        bytes calldata signature,
+        address keeper,
+        address token,
+        address payee,
+        uint256 ratePerSecond,
+        uint256 maxCost,
+        uint256 maxSeconds,
+        uint256 expiry
+    ) external returns (bytes32 sessionId) {
+        // Verify EIP-712 signature
+        _verifySessionRequest(request, signature);
+
+        // Check deadline
+        require(request.deadline >= block.timestamp, "Request expired");
+
+        // Validate policy parameters
+        require(keeper != address(0), "Invalid keeper");
+        require(token != address(0), "Invalid token");
+        require(payee != address(0), "Invalid payee");
+        require(ratePerSecond > 0, "Invalid rate");
+        require(expiry > block.timestamp, "Invalid expiry");
+
+        // Create or update policy in user's storage
+        uint256 policyId = request.policyId;
+        Policy storage policy = _getPolicy(policyId);
+
+        // Only set policy if not already enabled (first time setup)
+        if (!policy.enabled) {
+            policy.keeper = keeper;
+            policy.token = token;
+            policy.payee = payee;
+            policy.ratePerSecond = ratePerSecond;
+            policy.maxCost = maxCost;
+            policy.maxSeconds = maxSeconds;
+            policy.expiry = expiry;
+            policy.enabled = true;
+            if (policyId >= policyCount) {
+                policyCount = policyId + 1;
+            }
+        }
+
+        // Verify policy is valid
+        require(policy.enabled, "Policy disabled");
+        require(block.timestamp < policy.expiry, "Policy expired");
+
+        // Create session
+        uint256 id = sessionCount++;
+        sessionId = keccak256(abi.encodePacked(id, msg.sender, block.timestamp));
+
+        Session storage session = _getSession(sessionId);
+        session.user = msg.sender;
+        session.policyId = policyId;
+        session.startedAt = block.timestamp;
+        session.chargedSeconds = 0;
+        session.chargedAmount = 0;
+        session.lastChargeAt = block.timestamp;
+        session.closed = false;
+
+        // Increment nonce for replay protection
+        nonces[msg.sender]++;
+
+        emit SessionOpened(sessionId, msg.sender, policyId);
+    }
+
     /// @notice Charge user for elapsed time (keeper only)
     /// @dev Only callable by authorized keeper (relayer)
     /// @param sessionId Session ID to charge
