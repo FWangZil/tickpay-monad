@@ -8,6 +8,7 @@ import {
   switchToMonad,
   setupWalletListeners,
   createWalletClientForChain,
+  buildDelegationAuthorization,
   NEXT_PUBLIC_LOGIC_CONTRACT,
   NEXT_PUBLIC_CHAIN_ID,
 } from "@/lib/viem";
@@ -170,8 +171,16 @@ export default function Home() {
         throw new Error(createData.error || "Failed to create session");
       }
 
-      // Step 2: Sign EIP-712 data
-      console.log("Step 2: Signing request...");
+      // Step 2: Build EIP-7702 delegation authorization
+      console.log("Step 2: Building delegation authorization...");
+      const authorization = await buildDelegationAuthorization(
+        walletAddress,
+        NEXT_PUBLIC_LOGIC_CONTRACT
+      );
+      console.log("Delegation authorization ready");
+
+      // Step 3: Sign EIP-712 data
+      console.log("Step 3: Signing request...");
 
       // Use direct window.ethereum request for maximum compatibility
       const ethereum = (window as any).ethereum;
@@ -192,8 +201,8 @@ export default function Home() {
       });
       console.log("Signature received:", signature);
 
-      // Step 3: Start session (relayer sends delegation tx)
-      console.log("Step 3: Starting session with relayer...");
+      // Step 4: Start session (relayer sends delegation tx)
+      console.log("Step 4: Starting session with relayer...");
       const startResponse = await fetch("/api/session/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -201,6 +210,14 @@ export default function Home() {
           userAddress: walletAddress,
           signature,
           policyId: 0,
+          authorizationList: [
+            {
+              ...authorization,
+              nonce: authorization.nonce,
+              v: authorization.v,
+              yParity: authorization.yParity,
+            },
+          ],
         }),
       });
 
@@ -208,6 +225,11 @@ export default function Home() {
       console.log("Session started:", startData);
 
       if (!startResponse.ok) {
+        console.error("Start session failed", {
+          status: startResponse.status,
+          details: startData?.details,
+          error: startData?.error,
+        });
         throw new Error(startData.error || "Failed to start session");
       }
 

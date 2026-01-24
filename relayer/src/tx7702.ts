@@ -1,13 +1,18 @@
-import { type Address, type Hash, type Hex, toBytes, concatHex, keccak256, encodePacked, createWalletClient, createPublicClient, http } from "viem";
+import { type Address, type Hash, type Hex, concatHex, encodePacked } from "viem";
+import type { Signature } from "viem";
 import { walletClient, publicClient, monad } from "./client.js";
 
 /**
  * EIP-7702 Authorization structure
  */
 export interface Authorization {
-  contractAddress: Address;
-  nonce: bigint;
-  signature: Hex;
+  address: Address;
+  chainId: number;
+  nonce: number;
+  r: Hex;
+  s: Hex;
+  v?: number;
+  yParity?: number;
 }
 
 /**
@@ -20,33 +25,31 @@ export async function buildAuthorization(
   delegateContract: Address,
   userPrivateKey: Hex
 ): Promise<Authorization> {
-  const { privateKeyToAccount, sign } = await import("viem/accounts");
+  const { privateKeyToAccount } = await import("viem/accounts");
 
-  // Create account from private key
   const account = privateKeyToAccount(userPrivateKey);
-
-  // Get current nonce for the account
   const nonce = await publicClient.getTransactionCount({
     address: account.address,
   });
 
-  // Sign the authorization
-  // EIP-7702 authorization signature: sign(keccak256(abi.encodePacked(contractAddress, nonce)))
-  const authHash = keccak256(
-    encodePacked(
-      ["address", "uint256"],
-      [delegateContract, BigInt(nonce)]
-    )
-  );
-
-  const signature = await account.signMessage({
-    message: { raw: authHash },
+  const authorization = await account.signAuthorization({
+    address: delegateContract,
+    chainId: monad.id,
+    nonce,
   });
 
+  const signature = authorization as Signature;
   return {
-    contractAddress: delegateContract,
-    nonce: BigInt(nonce),
-    signature: signature as Hex,
+    address: delegateContract,
+    chainId: Number(authorization.chainId),
+    nonce: Number(authorization.nonce),
+    r: signature.r,
+    s: signature.s,
+    v: typeof signature.v === "bigint" ? Number(signature.v) : signature.v,
+    yParity:
+      typeof signature.yParity === "bigint"
+        ? Number(signature.yParity)
+        : signature.yParity,
   };
 }
 

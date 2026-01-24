@@ -1,4 +1,14 @@
-import { createPublicClient, createWalletClient, custom, http, type Address, type Chain } from "viem";
+import {
+  createPublicClient,
+  createWalletClient,
+  custom,
+  http,
+  parseSignature,
+  type Address,
+  type Chain,
+  type Hex,
+} from "viem";
+import { hashAuthorization } from "viem/utils";
 
 // Monad chain configuration
 export const monad: Chain = {
@@ -182,6 +192,56 @@ export function setupWalletListeners(handlers: {
       window.ethereum.removeListener("chainChanged", handleChainChanged);
       window.ethereum.removeListener("disconnect", handleDisconnect);
     }
+  };
+}
+
+export interface Authorization {
+  address: Address;
+  chainId: number;
+  nonce: number;
+  r: Hex;
+  s: Hex;
+  v?: number;
+  yParity?: number;
+}
+
+export async function buildDelegationAuthorization(
+  userAddress: Address,
+  delegateContract: Address
+): Promise<Authorization> {
+  if (typeof window === "undefined" || !window.ethereum) {
+    throw new Error("No wallet found. Please install a wallet extension.");
+  }
+
+  const nonceHex = await window.ethereum.request({
+    method: "eth_getTransactionCount",
+    params: [userAddress, "latest"],
+  });
+  const nonce = Number(nonceHex);
+  const chainId = NEXT_PUBLIC_CHAIN_ID;
+  const authHash = hashAuthorization({
+    address: delegateContract,
+    chainId,
+    nonce,
+  });
+
+  const signature = await window.ethereum.request({
+    method: "eth_sign",
+    params: [userAddress, authHash],
+  });
+
+  const signatureParts = parseSignature(signature as Hex);
+  return {
+    address: delegateContract,
+    chainId,
+    nonce,
+    r: signatureParts.r,
+    s: signatureParts.s,
+    v: typeof signatureParts.v === "bigint" ? Number(signatureParts.v) : signatureParts.v,
+    yParity:
+      typeof signatureParts.yParity === "bigint"
+        ? Number(signatureParts.yParity)
+        : signatureParts.yParity,
   };
 }
 

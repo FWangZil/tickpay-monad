@@ -9,12 +9,13 @@ import {
   parseEventLogs,
 } from "viem";
 import { publicClient, walletClient, VIDEO_SESSION_LOGIC_ABI, config, activeSessions, type SessionState } from "./client.js";
-import { buildAuthorization } from "./tx7702.js";
+import { buildAuthorization, type Authorization } from "./tx7702.js";
 
 export interface StartSessionParams {
   userAddress: Address;
   userSignature: Hex; // EIP-712 signature for session request
   userPrivateKey?: Hex; // Optional: for demo mode with test key
+  authorizationList?: Authorization[];
   policyId?: bigint;
 }
 
@@ -41,7 +42,13 @@ export async function startSession(params: StartSessionParams): Promise<{
   txHash: Hash;
   policyId: bigint;
 }> {
-  const { userAddress, userSignature, userPrivateKey, policyId = 0n } = params;
+  const {
+    userAddress,
+    userSignature,
+    userPrivateKey,
+    authorizationList,
+    policyId = 0n,
+  } = params;
 
   // Decode the signature to get request parameters
   // In production, you'd get these from the API call
@@ -65,7 +72,16 @@ export async function startSession(params: StartSessionParams): Promise<{
   try {
     let txHash: Hash;
 
-    if (userPrivateKey) {
+    if (authorizationList && authorizationList.length > 0) {
+      txHash = await walletClient.writeContract({
+        address: userAddress, // Call the user's EOA (delegated)
+        abi: VIDEO_SESSION_LOGIC_ABI,
+        functionName: "openSession",
+        args: [request, userSignature],
+        // @ts-ignore - viem supports authorizationList in type 4
+        authorizationList,
+      });
+    } else if (userPrivateKey) {
       // Demo mode: Use type 4 transaction with EIP-7702 delegation
       const auth = await buildAuthorization(config.LOGIC_CONTRACT, userPrivateKey);
 
@@ -99,7 +115,7 @@ export async function startSession(params: StartSessionParams): Promise<{
       abi: VIDEO_SESSION_LOGIC_ABI,
       logs: receipt.logs,
       eventName: "SessionOpened",
-    });
+    }) as Array<{ args?: { sessionId?: string } }>;
 
     let sessionId = events[0]?.args?.sessionId as string | undefined;
     if (!sessionId) {
