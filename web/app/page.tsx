@@ -283,231 +283,281 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-black text-white">
-      <div className="container mx-auto px-4 py-8 max-w-6xl">
+    <main className="min-h-screen bg-[#050505] text-white selection:bg-[#8338ec]/30 overflow-hidden relative">
+      {/* Background Decor */}
+      <div className="fixed top-0 left-0 w-full h-full overflow-hidden pointer-events-none z-0">
+        <div className="absolute -top-[20%] -left-[10%] w-[50%] h-[50%] bg-[#8338ec]/10 rounded-full blur-[120px]" />
+        <div className="absolute top-[40%] -right-[10%] w-[40%] h-[40%] bg-[#3a86ff]/10 rounded-full blur-[120px]" />
+      </div>
+
+      <div className="container mx-auto px-6 py-12 max-w-7xl relative z-10">
         {/* Header */}
-        <header className="mb-8">
-          <div className="flex items-center justify-between">
+        <header className="flex items-center justify-between mb-16">
+          <div className="flex items-center gap-4">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#8338ec] to-[#3a86ff] flex items-center justify-center shadow-lg shadow-purple-500/20">
+              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+            </div>
             <div>
-              <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
+              <h1 className="text-2xl font-bold tracking-tight text-white">
                 TickPay
               </h1>
-              <p className="text-gray-400 mt-2">Per-Second Video Billing on Monad</p>
+              <p className="text-xs text-gray-400 font-medium tracking-wide uppercase">Monad Streaming</p>
             </div>
+          </div>
 
-            {/* Wallet Connection */}
-            <div className="flex items-center gap-4">
-              {chainId !== null && (
-                <div className={`px-3 py-1 rounded-full text-sm ${
-                  isCorrectChain ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"
-                }`}>
-                  {isCorrectChain ? "Monad" : `Chain ${chainId}`}
-                </div>
-              )}
+          {/* Wallet Connection */}
+          <div className="flex items-center gap-4">
+            {chainId !== null && (
+              <div className={`px-4 py-1.5 rounded-full text-xs font-semibold border backdrop-blur-md transition-colors ${
+                isCorrectChain 
+                  ? "bg-green-500/10 border-green-500/20 text-green-400" 
+                  : "bg-red-500/10 border-red-500/20 text-red-400"
+              }`}>
+                {isCorrectChain ? "Monad Testnet" : `Chain ID: ${chainId}`}
+              </div>
+            )}
 
-              {walletAddress ? (
-                <div className="bg-gray-800 px-4 py-2 rounded-lg flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-green-400"></div>
-                  <span className="text-sm font-mono">
+            {walletAddress ? (
+              <div className="group relative">
+                <div className="bg-[#111] border border-white/10 hover:border-white/20 transition-colors px-5 py-2.5 rounded-xl flex items-center gap-3 cursor-default">
+                  <div className="w-2 h-2 rounded-full bg-green-400 shadow-[0_0_10px_rgba(74,222,128,0.5)]"></div>
+                  <span className="text-sm font-medium font-mono text-gray-200">
                     {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
                   </span>
                 </div>
-              ) : (
-                <button
-                  onClick={handleConnectWallet}
-                  disabled={isLoading}
-                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 px-6 py-2 rounded-lg font-medium transition-colors"
-                >
-                  {isLoading ? "Connecting..." : "Connect Wallet"}
-                </button>
-              )}
-            </div>
+              </div>
+            ) : (
+              <button
+                onClick={handleConnectWallet}
+                disabled={isLoading}
+                className="relative overflow-hidden group bg-white text-black hover:bg-gray-100 px-6 py-2.5 rounded-xl font-semibold text-sm transition-all duration-300 shadow-[0_0_20px_rgba(255,255,255,0.1)] hover:shadow-[0_0_25px_rgba(255,255,255,0.2)] disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <span className="relative z-10 flex items-center gap-2">
+                  {isLoading ? (
+                    <>
+                      <svg className="animate-spin h-4 w-4 text-black" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Connecting...
+                    </>
+                  ) : (
+                    "Connect Wallet"
+                  )}
+                </span>
+              </button>
+            )}
           </div>
         </header>
 
         {/* Error Display */}
         {error && (
-          <div className="mb-6 bg-red-500/10 border border-red-500/50 text-red-400 px-4 py-3 rounded-lg">
-            {error}
+          <div className="mb-8 animate-fade-in bg-red-500/10 border border-red-500/20 text-red-200 px-6 py-4 rounded-xl flex items-center gap-3">
+            <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span className="text-sm font-medium">{error}</span>
           </div>
         )}
 
-        {/* Main Content */}
-        <div className="grid md:grid-cols-2 gap-8">
-          {/* Video Player */}
-          <div className="bg-gray-800/50 rounded-xl overflow-hidden border border-gray-700">
-            <div className="aspect-video bg-black relative">
-              <video
-                ref={videoRef}
-                className="w-full h-full"
-                controls
-                onPlay={handleVideoPlay}
-                onPause={handleVideoPause}
-                onEnded={handleVideoEnded}
-                onTimeUpdate={handleTimeUpdate}
-              >
-                <source
-                  src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
-                  type="video/mp4"
-                />
-                Your browser does not support the video tag.
-              </video>
+        {/* Main Grid */}
+        <div className="grid lg:grid-cols-12 gap-8 lg:gap-12">
+          
+          {/* Left Column: Video Player */}
+          <div className="lg:col-span-8 space-y-6">
+            <div className="group relative rounded-2xl overflow-hidden bg-[#111] border border-white/5 shadow-2xl shadow-black/50">
+              {/* Glow effect behind player */}
+              <div className="absolute -inset-1 bg-gradient-to-r from-[#8338ec] to-[#3a86ff] opacity-20 blur-xl group-hover:opacity-30 transition-opacity duration-500" />
+              
+              <div className="relative aspect-video bg-black">
+                <video
+                  ref={videoRef}
+                  className="w-full h-full object-contain"
+                  controls
+                  onPlay={handleVideoPlay}
+                  onPause={handleVideoPause}
+                  onEnded={handleVideoEnded}
+                  onTimeUpdate={handleTimeUpdate}
+                  poster="https://peach.blender.org/wp-content/uploads/title_anouncement.jpg?x11217"
+                >
+                  <source
+                    src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
+                    type="video/mp4"
+                  />
+                  Your browser does not support the video tag.
+                </video>
 
-              {/* Session Overlay */}
-              {activeSessionId && (
-                <div className="absolute top-4 left-4 bg-black/70 backdrop-blur-sm px-3 py-1 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></div>
-                    <span className="text-sm">Billing Active</span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Video Controls */}
-            <div className="p-4">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h3 className="font-semibold">Big Buck Bunny</h3>
-                  <p className="text-sm text-gray-400">Sample Video</p>
-                </div>
-
-                {walletAddress && isCorrectChain && (
-                  <div className="flex gap-2">
-                    {!activeSessionId ? (
-                      <button
-                        onClick={handleStartWatching}
-                        disabled={isLoading}
-                        className="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2"
-                      >
-                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                          <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
-                        </svg>
-                        {isLoading ? "Starting..." : "Start Watching"}
-                      </button>
-                    ) : (
-                      <button
-                        onClick={handleStopWatching}
-                        disabled={isLoading}
-                        className="bg-red-600 hover:bg-red-700 disabled:bg-gray-600 px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2"
-                      >
-                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                          <path d="M5.75 3a.75.75 0 00-.75.75v12.5c0 .414.336.75.75.75h1.5a.75.75 0 00.75-.75V3.75A.75.75 0 007.25 3h-1.5zM12.75 3a.75.75 0 00-.75.75v12.5c0 .414.336.75.75.75h1.5a.75.75 0 00.75-.75V3.75a.75.75 0 00-.75-.75h-1.5z" />
-                        </svg>
-                        {isLoading ? "Stopping..." : "Stop Watching"}
-                      </button>
-                    )}
+                {/* Live Indicator */}
+                {activeSessionId && (
+                  <div className="absolute top-6 left-6 flex items-center gap-2 bg-black/60 backdrop-blur-md px-4 py-2 rounded-full border border-white/10">
+                    <span className="relative flex h-3 w-3">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                    </span>
+                    <span className="text-xs font-bold tracking-wide uppercase text-white">Billing Active</span>
                   </div>
                 )}
               </div>
 
-              {/* Progress Bar */}
-              <div className="bg-gray-700 rounded-full h-2 overflow-hidden">
-                <div
-                  className="bg-gradient-to-r from-blue-500 to-purple-500 h-full transition-all duration-300"
-                  style={{
-                    width: videoRef.current
-                      ? `${(currentTime / videoRef.current.duration) * 100}%`
-                      : "0%",
-                  }}
-                />
+              {/* Video Controls / Info Bar */}
+              <div className="p-6 bg-[#111] border-t border-white/5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <h2 className="text-xl font-bold text-white mb-1">Big Buck Bunny</h2>
+                    <p className="text-sm text-gray-400">Open Source • 1080p • 60fps</p>
+                  </div>
+
+                  {walletAddress && isCorrectChain && (
+                    <div className="flex-shrink-0">
+                      {!activeSessionId ? (
+                        <button
+                          onClick={handleStartWatching}
+                          disabled={isLoading}
+                          className="w-full sm:w-auto bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500 text-white px-6 py-2.5 rounded-lg font-bold text-sm shadow-lg shadow-green-900/20 transition-all flex items-center justify-center gap-2"
+                        >
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
+                          </svg>
+                          {isLoading ? "Initializing..." : "Start & Pay"}
+                        </button>
+                      ) : (
+                        <button
+                          onClick={handleStopWatching}
+                          disabled={isLoading}
+                          className="w-full sm:w-auto bg-[#222] hover:bg-[#333] border border-white/10 text-white px-6 py-2.5 rounded-lg font-bold text-sm transition-all flex items-center justify-center gap-2"
+                        >
+                          <svg className="w-4 h-4 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z" clipRule="evenodd" />
+                          </svg>
+                          {isLoading ? "Stopping..." : "Stop Watching"}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+                
+                {/* Progress Bar Visual */}
+                <div className="mt-6 h-1.5 w-full bg-gray-800 rounded-full overflow-hidden">
+                   <div
+                    className="h-full bg-gradient-to-r from-[#8338ec] to-[#3a86ff]"
+                    style={{
+                      width: videoRef.current
+                        ? `${(currentTime / videoRef.current.duration) * 100}%`
+                        : "0%",
+                    }}
+                  />
+                </div>
               </div>
             </div>
           </div>
 
-          {/* Billing Info */}
-          <div className="space-y-6">
-            {/* Session Status Card */}
-            <div className="bg-gray-800/50 rounded-xl p-6 border border-gray-700">
-              <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-                <svg className="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                Session Status
-              </h2>
+          {/* Right Column: Stats & Info */}
+          <div className="lg:col-span-4 space-y-6">
+            
+            {/* Stats Card */}
+            <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-xl">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="p-2 bg-purple-500/20 rounded-lg text-purple-400">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                  </svg>
+                </div>
+                <h3 className="font-bold text-lg">Billing Session</h3>
+              </div>
 
               {activeSessionId && sessionStatus ? (
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center py-2 border-b border-gray-700">
-                    <span className="text-gray-400">Session ID</span>
-                    <span className="font-mono text-sm">{activeSessionId.slice(0, 12)}...</span>
+                <div className="space-y-6">
+                  <div className="flex flex-col gap-1">
+                     <span className="text-xs text-gray-400 uppercase tracking-wider">Session ID</span>
+                     <span className="font-mono text-xs text-gray-300 break-all">{activeSessionId}</span>
                   </div>
 
-                  <div className="flex justify-between items-center py-2 border-b border-gray-700">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-4 rounded-xl bg-black/20 border border-white/5">
+                      <span className="text-xs text-gray-400 block mb-1">Time</span>
+                      <span className="text-xl font-bold font-mono text-white">
+                        {formatTime(sessionStatus.chargedSeconds)}
+                      </span>
+                    </div>
+                    <div className="p-4 rounded-xl bg-black/20 border border-white/5">
+                      <span className="text-xs text-gray-400 block mb-1">Cost</span>
+                      <span className="text-xl font-bold font-mono text-[#8338ec]">
+                        {formatTokenAmount(sessionStatus.chargedAmount)}
+                        <span className="text-xs ml-1 text-gray-500">TICK</span>
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between text-sm py-3 border-t border-white/5">
                     <span className="text-gray-400">Status</span>
-                    <span className={sessionStatus.closed ? "text-red-400" : "text-green-400"}>
-                      {sessionStatus.closed ? "Closed" : "Active"}
+                    <span className={`px-2 py-1 rounded text-xs font-bold ${
+                      sessionStatus.closed 
+                        ? "bg-red-500/20 text-red-400" 
+                        : "bg-green-500/20 text-green-400"
+                    }`}>
+                      {sessionStatus.closed ? "CLOSED" : "STREAMING"}
                     </span>
                   </div>
-
-                  <div className="flex justify-between items-center py-2 border-b border-gray-700">
-                    <span className="text-gray-400">Time Watched</span>
-                    <span className="font-semibold">{formatTime(sessionStatus.chargedSeconds)}</span>
-                  </div>
-
-                  <div className="flex justify-between items-center py-2 border-b border-gray-700">
-                    <span className="text-gray-400">Amount Charged</span>
-                    <span className="font-semibold text-purple-400">
-                      {formatTokenAmount(sessionStatus.chargedAmount)} TICK
-                    </span>
-                  </div>
-
-                  <div className="flex justify-between items-center py-2">
-                    <span className="text-gray-400">Rate</span>
-                    <span className="text-sm">0.001 TICK/second</span>
+                  
+                  <div className="text-xs text-center text-gray-500">
+                    Rate: 0.001 TICK / second
                   </div>
                 </div>
               ) : (
-                <div className="text-center py-8 text-gray-500">
-                  <svg className="w-16 h-16 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <p>No active session</p>
-                  <p className="text-sm mt-2">Click "Start Watching" to begin billing</p>
+                <div className="py-8 text-center">
+                  <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-white/5 flex items-center justify-center">
+                    <svg className="w-8 h-8 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <p className="text-gray-400 font-medium">No Active Session</p>
+                  <p className="text-xs text-gray-600 mt-2 max-w-[200px] mx-auto">Start watching the video to begin real-time billing via EIP-7702</p>
                 </div>
               )}
             </div>
 
-            {/* How It Works */}
-            <div className="bg-gray-800/50 rounded-xl p-6 border border-gray-700">
-              <h2 className="text-xl font-semibold mb-4">How It Works</h2>
-              <ol className="space-y-3 text-sm text-gray-300">
-                <li className="flex gap-3">
-                  <span className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold">1</span>
-                  <span>Connect your wallet and switch to Monad network</span>
-                </li>
-                <li className="flex gap-3">
-                  <span className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold">2</span>
-                  <span>Click "Start Watching" to authorize EIP-7702 delegation</span>
-                </li>
-                <li className="flex gap-3">
-                  <span className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold">3</span>
-                  <span>Watch the video while being billed per-second</span>
-                </li>
-                <li className="flex gap-3">
-                  <span className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold">4</span>
-                  <span>Click "Stop Watching" to revoke delegation</span>
-                </li>
-              </ol>
+            {/* Steps / Info */}
+            <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
+              <h3 className="font-bold text-lg mb-4 text-gray-200">How It Works</h3>
+              <ul className="space-y-4">
+                {[
+                  "Connect Wallet (Monad Testnet)",
+                  "Approve EIP-7702 Delegation",
+                  "Stream & Pay Per Second",
+                  "Stop to Revoke Access"
+                ].map((step, i) => (
+                  <li key={i} className="flex gap-3 text-sm text-gray-400 items-start">
+                    <span className="flex-shrink-0 w-5 h-5 rounded-full bg-white/10 flex items-center justify-center text-[10px] font-bold text-white mt-0.5">
+                      {i + 1}
+                    </span>
+                    <span>{step}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
-
-            {/* Tech Stack */}
-            <div className="bg-gradient-to-br from-purple-900/20 to-blue-900/20 rounded-xl p-6 border border-purple-500/30">
-              <h3 className="text-sm font-semibold text-purple-300 mb-2">Powered By</h3>
-              <div className="flex flex-wrap gap-2">
-                <span className="px-2 py-1 bg-gray-800 rounded text-xs">EIP-7702</span>
-                <span className="px-2 py-1 bg-gray-800 rounded text-xs">Monad</span>
-                <span className="px-2 py-1 bg-gray-800 rounded text-xs">Viem</span>
-                <span className="px-2 py-1 bg-gray-800 rounded text-xs">Foundry</span>
+            
+            {/* Tech Stack Chips */}
+             <div className="flex flex-wrap gap-2">
+                {["EIP-7702", "Monad", "Viem", "Next.js 15"].map((tech) => (
+                  <span key={tech} className="px-3 py-1 rounded-full bg-[#8338ec]/10 border border-[#8338ec]/20 text-[#8338ec] text-xs font-medium">
+                    {tech}
+                  </span>
+                ))}
               </div>
-            </div>
+
           </div>
         </div>
 
         {/* Footer */}
-        <footer className="mt-12 text-center text-sm text-gray-500">
-          <p>Built with EIP-7702 Account Abstraction on Monad Blockchain</p>
-          <p className="mt-1">Contract: {NEXT_PUBLIC_LOGIC_CONTRACT}</p>
+        <footer className="mt-20 border-t border-white/5 pt-8 text-center">
+          <p className="text-sm text-gray-500 mb-2">
+            Built with <span className="text-white font-medium">EIP-7702 Account Abstraction</span> on Monad
+          </p>
+          <p className="text-xs text-gray-600 font-mono">
+            Contract: {NEXT_PUBLIC_LOGIC_CONTRACT}
+          </p>
         </footer>
       </div>
     </main>
