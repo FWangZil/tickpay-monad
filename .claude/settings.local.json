@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tree:*)",
+      "Bash(git submodule update:*)",
+      "Bash(git init:*)",
+      "Bash(git submodule add:*)",
+      "Bash(forge install:*)",
+      "Bash(forge build:*)",
+      "Bash(forge test:*)"
+    ]
+  }
+}
