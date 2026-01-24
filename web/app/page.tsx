@@ -30,6 +30,7 @@ export default function Home() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
+  const startInProgressRef = useRef(false);
 
   // Polling interval ref
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -130,14 +131,20 @@ export default function Home() {
   }
 
   async function handleStartWatching() {
+    if (startInProgressRef.current || activeSessionId) {
+      return;
+    }
+    startInProgressRef.current = true;
     console.log("handleStartWatching called", { walletAddress, isCorrectChain });
     if (!walletAddress) {
       setError("Please connect your wallet first");
+      startInProgressRef.current = false;
       return;
     }
 
     if (!isCorrectChain) {
       setError("Please switch to Monad network");
+      startInProgressRef.current = false;
       return;
     }
 
@@ -215,6 +222,7 @@ export default function Home() {
       setError(error.message || "Failed to start session");
     } finally {
       setIsLoading(false);
+      startInProgressRef.current = false;
     }
   }
 
@@ -276,7 +284,7 @@ export default function Home() {
 
   function handleVideoPlay() {
     setIsPlaying(true);
-    if (!activeSessionId && walletAddress) {
+    if (!activeSessionId && walletAddress && !startInProgressRef.current) {
       handleStartWatching();
     }
   }
