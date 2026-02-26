@@ -9,7 +9,8 @@
       "Bash(forge build:*)",
       "Bash(forge test:*)",
       "Bash(bun install)",
-      "Bash(bun run build)"
+      "Bash(bun run build)",
+      "Bash(npm run build)"
     ]
   }
 }

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { formatUnits, isAddress, type Address, type Hex } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import styles from "./agent-to-agent.module.css";
-import { NEXT_PUBLIC_LOGIC_CONTRACT, NEXT_PUBLIC_RELAYER_URL, createPublicClientForChain } from "@/lib/viem";
+import { NEXT_PUBLIC_LOGIC_CONTRACT, NEXT_PUBLIC_TOKEN, NEXT_PUBLIC_RELAYER_URL, createPublicClientForChain } from "@/lib/viem";
 
 type AgentId = "agent-b" | "agent-c";
 type StreamStatus = "queued" | "streaming" | "paused" | "finished";
@@ -78,11 +78,79 @@ export default function AgentToAgentDemo() {
   const [isBusy, setIsBusy] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
 
+  const [balances, setBalances] = useState({
+    agentA: { tick: 0, native: 0 },
+    agentB: { tick: 0, native: 0 },
+    agentC: { tick: 0, native: 0 },
+  });
+  const [prevBalances, setPrevBalances] = useState({
+    agentA: { tick: 0, native: 0 },
+    agentB: { tick: 0, native: 0 },
+    agentC: { tick: 0, native: 0 },
+  });
+
   useEffect(() => {
     if (generatedWallets.length > 0) return;
     generateWalletSet();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const fetchBalances = async () => {
+      if (!isAddress(NEXT_PUBLIC_TOKEN)) return;
+
+      const addresses = [
+        { key: "agentA" as const, address: agentAAddress },
+        { key: "agentB" as const, address: agentBAddress },
+        { key: "agentC" as const, address: agentCAddress },
+      ];
+
+      const newBalances: Record<string, { tick: number; native: number }> = {};
+
+      for (const { key, address } of addresses) {
+        if (!isAddress(address)) continue;
+        try {
+          const nativeBalance = await publicClient.getBalance({ address });
+          const tickBalance = await publicClient.readContract({
+            address: NEXT_PUBLIC_TOKEN,
+            abi: [
+              {
+                name: "balanceOf",
+                type: "function",
+                stateMutability: "view",
+                inputs: [{ name: "account", type: "address" }],
+                outputs: [{ type: "uint256" }],
+              },
+            ],
+            functionName: "balanceOf",
+            args: [address],
+          });
+          newBalances[key] = {
+            tick: Number(formatUnits(tickBalance as bigint, 18)),
+            native: Number(formatUnits(nativeBalance, 18)),
+          };
+        } catch {
+          // ignore errors
+        }
+      }
+
+      setPrevBalances((prev) => ({
+        agentA: balances.agentA,
+        agentB: balances.agentB,
+        agentC: balances.agentC,
+      }));
+      setBalances((prev) => ({
+        agentA: newBalances.agentA || prev.agentA,
+        agentB: newBalances.agentB || prev.agentB,
+        agentC: newBalances.agentC || prev.agentC,
+      }));
+    };
+
+    fetchBalances();
+    const timer = setInterval(fetchBalances, 3000);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentAAddress, agentBAddress, agentCAddress, publicClient]);
 
   useEffect(() => {
     const timer = setInterval(async () => {
@@ -416,6 +484,56 @@ export default function AgentToAgentDemo() {
     triggerDownload(blob, "agent-wallets.csv");
   }
 
+  function importWalletsFromJson(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const content = e.target?.result as string;
+        const data = JSON.parse(content);
+
+        // Support both { wallets: [...] } and direct array formats
+        const wallets: DemoWallet[] = data.wallets || data;
+
+        if (!Array.isArray(wallets) || wallets.length === 0) {
+          throw new Error("Invalid wallet file format");
+        }
+
+        // Validate wallet structure
+        for (const w of wallets) {
+          if (!w.role || !w.address || !w.privateKey) {
+            throw new Error("Missing required wallet fields");
+          }
+        }
+
+        setGeneratedWallets(wallets);
+
+        const a = wallets.find((w) => w.role === "agent-a");
+        const b = wallets.find((w) => w.role === "agent-b");
+        const c = wallets.find((w) => w.role === "agent-c");
+
+        if (a) {
+          setAgentAPrivateKey(a.privateKey);
+          setAgentAAddress(a.address);
+        }
+        if (b) setAgentBAddress(b.address);
+        if (c) setAgentCAddress(c.address);
+
+        addLog(`Imported ${wallets.length} wallet(s) from file.`);
+        setLastError(null);
+      } catch (error: any) {
+        setLastError(`Import failed: ${error.message}`);
+        addLog(`Import failed: ${error.message}`);
+      }
+    };
+    reader.readAsText(file);
+
+    // Reset input so the same file can be selected again
+    event.target.value = "";
+  }
+
   async function faucetWallet(address: Address) {
     try {
       const res = await fetch(`${relayerUrl}/api/faucet`, {
@@ -453,48 +571,162 @@ export default function AgentToAgentDemo() {
   return (
     <main className={styles.page}>
       <div className={styles.container}>
+        {/* Hero Section */}
         <section className={styles.hero}>
-          <h1>Agent-to-Agent Streaming Payments Playground</h1>
+          <h1>Agent-to-Agent Streaming Payments</h1>
           <p>
-            Agent A delegates work to Agent B and Agent C. Each subtask opens a live payment stream and pays per second
-            while work continues.
+            Agent A delegates work to Agent B and Agent C. Each subtask opens a live payment stream
+            that pays per second while work continues.
           </p>
         </section>
 
-        <section className={styles.grid}>
-          <article className={styles.panel}>
-            <h2>Agent A Control Plane</h2>
-            <div className={styles.fieldGrid}>
-              <div className={styles.field}>
-                <label>Relayer URL</label>
-                <input value={relayerUrl} onChange={(e) => setRelayerUrl(e.target.value)} />
+        {/* Balance Dashboard */}
+        <section className={styles.balanceSection}>
+          <div className={styles.balanceCard}>
+            <div className={styles.balanceHeader}>
+              <span className={styles.balanceIcon}>A</span>
+              <span className={styles.balanceLabel}>Agent A</span>
+              <span className={styles.balanceRole}>Payer</span>
+            </div>
+            <div className={styles.balanceAddress}>{shortAddress(agentAAddress) || "Not set"}</div>
+            <div className={styles.balanceRow}>
+              <div className={styles.balanceItem}>
+                <span className={styles.balanceToken}>TICK</span>
+                <span className={`${styles.balanceValue} ${balances.agentA.tick < prevBalances.agentA.tick ? styles.decreasing : ""}`}>
+                  {balances.agentA.tick.toFixed(4)}
+                </span>
+                {balances.agentA.tick < prevBalances.agentA.tick && (
+                  <span className={styles.balanceDelta}>↓</span>
+                )}
               </div>
-              <div className={styles.field}>
-                <label>Agent A Private Key (demo only)</label>
-                <input
-                  type="password"
-                  value={agentAPrivateKey}
-                  onChange={(e) => setAgentAPrivateKey((e.target.value || "") as Hex | "")}
-                  placeholder="0x... only in-memory for hackathon demo"
-                />
-              </div>
-              <div className={styles.field}>
-                <label>Agent A Address</label>
-                <input value={agentAAddress} onChange={(e) => setAgentAAddress((e.target.value || "") as Address | "")} />
-              </div>
-              <div className={styles.field}>
-                <label>Agent B Wallet</label>
-                <input value={agentBAddress} onChange={(e) => setAgentBAddress((e.target.value || "") as Address | "")} />
-              </div>
-              <div className={styles.field}>
-                <label>Agent C Wallet</label>
-                <input value={agentCAddress} onChange={(e) => setAgentCAddress((e.target.value || "") as Address | "")} />
+              <div className={styles.balanceItem}>
+                <span className={styles.balanceToken}>MON</span>
+                <span className={styles.balanceValue}>{balances.agentA.native.toFixed(4)}</span>
               </div>
             </div>
-            <div className={styles.btnRow}>
-              <button className={`${styles.button} ${styles.secondary}`} onClick={generateWalletSet} type="button">
-                Generate A/B/C Wallets
+          </div>
+
+          <div className={styles.flowIndicator}>
+            <div className={styles.flowLine}>
+              <div className={styles.flowDot}></div>
+              <div className={styles.flowDot}></div>
+              <div className={styles.flowDot}></div>
+            </div>
+            <span className={styles.flowText}>Streaming</span>
+          </div>
+
+          <div className={styles.balanceCard}>
+            <div className={styles.balanceHeader}>
+              <span className={styles.balanceIcon}>B</span>
+              <span className={styles.balanceLabel}>Agent B</span>
+              <span className={styles.balanceRole}>Worker</span>
+            </div>
+            <div className={styles.balanceAddress}>{shortAddress(agentBAddress) || "Not set"}</div>
+            <div className={styles.balanceRow}>
+              <div className={styles.balanceItem}>
+                <span className={styles.balanceToken}>TICK</span>
+                <span className={`${styles.balanceValue} ${balances.agentB.tick > prevBalances.agentB.tick ? styles.increasing : ""}`}>
+                  {balances.agentB.tick.toFixed(4)}
+                </span>
+                {balances.agentB.tick > prevBalances.agentB.tick && (
+                  <span className={`${styles.balanceDelta} ${styles.up}`}>↑</span>
+                )}
+              </div>
+              <div className={styles.balanceItem}>
+                <span className={styles.balanceToken}>MON</span>
+                <span className={styles.balanceValue}>{balances.agentB.native.toFixed(4)}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className={styles.flowIndicator}>
+            <div className={styles.flowLine}>
+              <div className={styles.flowDot}></div>
+              <div className={styles.flowDot}></div>
+              <div className={styles.flowDot}></div>
+            </div>
+            <span className={styles.flowText}>Streaming</span>
+          </div>
+
+          <div className={styles.balanceCard}>
+            <div className={styles.balanceHeader}>
+              <span className={styles.balanceIcon}>C</span>
+              <span className={styles.balanceLabel}>Agent C</span>
+              <span className={styles.balanceRole}>Worker</span>
+            </div>
+            <div className={styles.balanceAddress}>{shortAddress(agentCAddress) || "Not set"}</div>
+            <div className={styles.balanceRow}>
+              <div className={styles.balanceItem}>
+                <span className={styles.balanceToken}>TICK</span>
+                <span className={`${styles.balanceValue} ${balances.agentC.tick > prevBalances.agentC.tick ? styles.increasing : ""}`}>
+                  {balances.agentC.tick.toFixed(4)}
+                </span>
+                {balances.agentC.tick > prevBalances.agentC.tick && (
+                  <span className={`${styles.balanceDelta} ${styles.up}`}>↑</span>
+                )}
+              </div>
+              <div className={styles.balanceItem}>
+                <span className={styles.balanceToken}>MON</span>
+                <span className={styles.balanceValue}>{balances.agentC.native.toFixed(4)}</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <div className={styles.mainGrid}>
+          {/* Left Column: Control Panels */}
+          <article className={styles.panel}>
+            <div className={styles.panelHeader}>
+              <div className={styles.panelIcon}>⚡</div>
+              <h2>Agent A Control Plane</h2>
+            </div>
+
+            <div className={styles.configSection}>
+              <div className={styles.fieldGrid}>
+                <div className={styles.field}>
+                  <label>Relayer URL</label>
+                  <input value={relayerUrl} onChange={(e) => setRelayerUrl(e.target.value)} />
+                </div>
+                <div className={styles.field}>
+                  <label>Agent A Private Key</label>
+                  <input
+                    type="password"
+                    value={agentAPrivateKey}
+                    onChange={(e) => setAgentAPrivateKey((e.target.value || "") as Hex | "")}
+                    placeholder="Demo only - never persisted"
+                  />
+                </div>
+                <div className={styles.field}>
+                  <label>Agent A Address</label>
+                  <input value={agentAAddress} onChange={(e) => setAgentAAddress((e.target.value || "") as Address | "")} />
+                </div>
+              </div>
+
+              <div className={styles.fieldGrid}>
+                <div className={styles.field}>
+                  <label>Agent B Wallet</label>
+                  <input value={agentBAddress} onChange={(e) => setAgentBAddress((e.target.value || "") as Address | "")} />
+                </div>
+                <div className={styles.field}>
+                  <label>Agent C Wallet</label>
+                  <input value={agentCAddress} onChange={(e) => setAgentCAddress((e.target.value || "") as Address | "")} />
+                </div>
+              </div>
+            </div>
+
+            <div className={styles.buttonGroup}>
+              <button className={`${styles.button} ${styles.primary}`} onClick={generateWalletSet} type="button">
+                Generate Wallets
               </button>
+              <label className={`${styles.button} ${styles.secondary} ${styles.fileLabel}`}>
+                Import Wallets
+                <input
+                  type="file"
+                  accept=".json"
+                  onChange={importWalletsFromJson}
+                  className={styles.fileInput}
+                />
+              </label>
               <button
                 className={`${styles.button} ${styles.secondary}`}
                 onClick={exportWalletsAsJson}
@@ -503,31 +735,13 @@ export default function AgentToAgentDemo() {
               >
                 Export JSON
               </button>
-              <button
-                className={`${styles.button} ${styles.secondary}`}
-                onClick={exportWalletsAsCsv}
-                type="button"
-                disabled={generatedWallets.length === 0}
-              >
-                Export CSV
-              </button>
-              <button className={`${styles.button} ${styles.secondary}`} onClick={seedScenario} type="button">
-                Load B/C Scenario
-              </button>
-              <button
-                className={`${styles.button} ${styles.primary}`}
-                onClick={startAllQueued}
-                type="button"
-                disabled={tasks.length === 0 || isBusy}
-              >
-                Start All Streams
-              </button>
             </div>
-            <div className={styles.btnRow}>
+
+            <div className={styles.faucetRow}>
               {generatedWallets.map((wallet) => (
                 <button
                   key={wallet.role}
-                  className={`${styles.button} ${styles.secondary}`}
+                  className={`${styles.button} ${styles.secondary} ${styles.small}`}
                   type="button"
                   onClick={() => faucetWallet(wallet.address)}
                 >
@@ -535,179 +749,265 @@ export default function AgentToAgentDemo() {
                 </button>
               ))}
             </div>
-            <div className={styles.btnRow}>
-              <button className={`${styles.button} ${styles.warning}`} type="button" disabled>
-                Demo note: private key never persisted; use test wallet only
-              </button>
-            </div>
           </article>
 
+          {/* Right Column: Task Form */}
           <article className={styles.panel}>
-            <h2>Task Dispatch Form</h2>
-            <div className={styles.fieldGrid}>
+            <div className={styles.panelHeader}>
+              <div className={styles.panelIcon}>📋</div>
+              <h2>Task Dispatch Form</h2>
+            </div>
+
+            <div className={styles.taskForm}>
               <div className={styles.field}>
                 <label>Task Title</label>
                 <input value={taskTitle} onChange={(e) => setTaskTitle(e.target.value)} />
               </div>
-              <div className={styles.field}>
-                <label>Assign To</label>
-                <select value={taskAssignee} onChange={(e) => setTaskAssignee(e.target.value as AgentId)}>
-                  <option value="agent-b">Agent B</option>
-                  <option value="agent-c">Agent C</option>
-                </select>
+
+              <div className={styles.fieldGrid}>
+                <div className={styles.field}>
+                  <label>Assign To</label>
+                  <select value={taskAssignee} onChange={(e) => setTaskAssignee(e.target.value as AgentId)}>
+                    <option value="agent-b">Agent B</option>
+                    <option value="agent-c">Agent C</option>
+                  </select>
+                </div>
+                <div className={styles.field}>
+                  <label>Rate (TICK/sec)</label>
+                  <input
+                    type="number"
+                    value={taskRate}
+                    min="0.001"
+                    step="0.001"
+                    onChange={(e) => setTaskRate(Number(e.target.value))}
+                  />
+                </div>
+                <div className={styles.field}>
+                  <label>Max Seconds</label>
+                  <input
+                    type="number"
+                    value={taskMaxSeconds}
+                    min="10"
+                    step="5"
+                    onChange={(e) => setTaskMaxSeconds(Number(e.target.value))}
+                  />
+                </div>
               </div>
-              <div className={styles.field}>
-                <label>Rate Per Second (TICK)</label>
-                <input
-                  type="number"
-                  value={taskRate}
-                  min="0.001"
-                  step="0.001"
-                  onChange={(e) => setTaskRate(Number(e.target.value))}
-                />
-              </div>
-              <div className={styles.field}>
-                <label>Max Seconds</label>
-                <input
-                  type="number"
-                  value={taskMaxSeconds}
-                  min="10"
-                  step="5"
-                  onChange={(e) => setTaskMaxSeconds(Number(e.target.value))}
-                />
-              </div>
-            </div>
-            <div className={styles.btnRow}>
+
               <button className={`${styles.button} ${styles.primary}`} onClick={createTask} type="button">
                 Assign Task + Queue Stream
               </button>
-            </div>
-          </article>
-        </section>
-
-        <section className={styles.grid}>
-          <article className={styles.panel}>
-            <h2>Live Stream Dashboard</h2>
-            <div className={styles.summary}>
-              <div className={styles.kpi}>
-                <span className={styles.label}>Agent A Total Paid</span>
-                <span className={styles.value}>{totalPaid} TICK</span>
-              </div>
-              <div className={styles.kpi}>
-                <span className={styles.label}>Active Streams</span>
-                <span className={styles.value}>{streamingCount}</span>
-              </div>
-            </div>
-            <div className={styles.laneWrap}>
-              <div className={styles.lane}>
-                <h3>Agent B Revenue: {agentBRevenue} TICK</h3>
-                <p className={styles.streamMeta}>Wallet: {shortAddress(agentBAddress)}</p>
-                <div className={styles.streamList}>
-                  {agentBTasks.map((task) => (
-                    <div className={styles.stream} key={task.id}>
-                      <p className={styles.streamTitle}>{task.title}</p>
-                      <p className={styles.streamMeta}>
-                        {task.elapsedSeconds}s / {task.maxSeconds}s, {task.paidAmount.toFixed(4)} TICK
-                      </p>
-                      <div className={styles.btnRow}>
-                        <span className={`${styles.badge} ${STATUS_CLASS[task.status]}`}>{task.status}</span>
-                        <button
-                          className={`${styles.button} ${styles.secondary}`}
-                          onClick={() => startTask(task.id)}
-                          type="button"
-                          disabled={isBusy || task.status === "streaming" || task.status === "finished"}
-                        >
-                          Start
-                        </button>
-                        <button className={`${styles.button} ${styles.secondary}`} onClick={() => pauseTask(task.id)} type="button">
-                          Pause
-                        </button>
-                        <button className={`${styles.button} ${styles.secondary}`} onClick={() => finishTask(task.id)} type="button">
-                          Finish
-                        </button>
-                        <button
-                          className={`${styles.button} ${styles.secondary}`}
-                          onClick={() => stopTask(task.id)}
-                          type="button"
-                          disabled={isBusy || !task.sessionId}
-                        >
-                          Stop Onchain
-                        </button>
-                      </div>
-                      {task.sessionId && <p className={styles.streamMeta}>session: {shortAddress(task.sessionId)}</p>}
-                      {task.startTxHash && <p className={styles.streamMeta}>start tx: {shortAddress(task.startTxHash)}</p>}
-                      {task.closeTxHash && <p className={styles.streamMeta}>stop tx: {shortAddress(task.closeTxHash)}</p>}
-                      {task.error && <p className={styles.streamMeta}>error: {task.error}</p>}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className={styles.lane}>
-                <h3>Agent C Revenue: {agentCRevenue} TICK</h3>
-                <p className={styles.streamMeta}>Wallet: {shortAddress(agentCAddress)}</p>
-                <div className={styles.streamList}>
-                  {agentCTasks.map((task) => (
-                    <div className={styles.stream} key={task.id}>
-                      <p className={styles.streamTitle}>{task.title}</p>
-                      <p className={styles.streamMeta}>
-                        {task.elapsedSeconds}s / {task.maxSeconds}s, {task.paidAmount.toFixed(4)} TICK
-                      </p>
-                      <div className={styles.btnRow}>
-                        <span className={`${styles.badge} ${STATUS_CLASS[task.status]}`}>{task.status}</span>
-                        <button
-                          className={`${styles.button} ${styles.secondary}`}
-                          onClick={() => startTask(task.id)}
-                          type="button"
-                          disabled={isBusy || task.status === "streaming" || task.status === "finished"}
-                        >
-                          Start
-                        </button>
-                        <button className={`${styles.button} ${styles.secondary}`} onClick={() => pauseTask(task.id)} type="button">
-                          Pause
-                        </button>
-                        <button className={`${styles.button} ${styles.secondary}`} onClick={() => finishTask(task.id)} type="button">
-                          Finish
-                        </button>
-                        <button
-                          className={`${styles.button} ${styles.secondary}`}
-                          onClick={() => stopTask(task.id)}
-                          type="button"
-                          disabled={isBusy || !task.sessionId}
-                        >
-                          Stop Onchain
-                        </button>
-                      </div>
-                      {task.sessionId && <p className={styles.streamMeta}>session: {shortAddress(task.sessionId)}</p>}
-                      {task.startTxHash && <p className={styles.streamMeta}>start tx: {shortAddress(task.startTxHash)}</p>}
-                      {task.closeTxHash && <p className={styles.streamMeta}>stop tx: {shortAddress(task.closeTxHash)}</p>}
-                      {task.error && <p className={styles.streamMeta}>error: {task.error}</p>}
-                    </div>
-                  ))}
-                </div>
+              <div className={styles.buttonRow}>
+                <button className={`${styles.button} ${styles.secondary}`} onClick={seedScenario} type="button">
+                  Load Demo Scenario
+                </button>
+                <button
+                  className={`${styles.button} ${styles.success}`}
+                  onClick={startAllQueued}
+                  type="button"
+                  disabled={tasks.length === 0 || isBusy}
+                >
+                  Start All Streams
+                </button>
               </div>
             </div>
           </article>
 
-          <article className={styles.panel}>
-            <h2>Event Log</h2>
-            <p className={styles.streamMeta}>
-              Stream payer: {shortAddress(agentAAddress)} | key set: {agentAPrivateKey ? "yes" : "no"}
-            </p>
-            {lastError && <p className={styles.streamMeta}>latest error: {lastError}</p>}
-            <div className={styles.logBox}>
-              {logs.length === 0 ? (
-                <p className={styles.logItem}>No events yet. Load a preset or assign a task.</p>
-              ) : (
-                logs.map((log) => (
-                  <p className={styles.logItem} key={log.id}>
-                    [{log.createdAt}] {log.text}
-                  </p>
-                ))
+          {/* Dashboard Section */}
+          <div className={styles.dashboardGrid}>
+            <article className={styles.panel}>
+              <div className={styles.panelHeader}>
+                <div className={styles.panelIcon}>📊</div>
+                <h2>Live Stream Dashboard</h2>
+              </div>
+
+              <div className={styles.summary}>
+                <div className={styles.kpi}>
+                  <span className={styles.label}>Agent A Total Paid</span>
+                  <span className={styles.value}>{totalPaid} TICK</span>
+                </div>
+                <div className={styles.kpi}>
+                  <span className={styles.label}>Active Streams</span>
+                  <span className={styles.value}>{streamingCount}</span>
+                </div>
+              </div>
+
+              <div className={styles.laneWrap}>
+                <div className={styles.lane}>
+                  <div className={styles.laneHeader}>
+                    <h3>Agent B Tasks</h3>
+                    <span className={styles.laneRevenue}>+{agentBRevenue} TICK</span>
+                  </div>
+                  <p className={styles.streamMeta}>{shortAddress(agentBAddress)}</p>
+                  <div className={styles.streamList}>
+                    {agentBTasks.length === 0 ? (
+                      <p className={styles.streamMeta}>No tasks assigned yet</p>
+                    ) : (
+                      agentBTasks.map((task) => (
+                        <div className={styles.stream} key={task.id}>
+                          <div className={styles.streamHeader}>
+                            <p className={styles.streamTitle}>{task.title}</p>
+                            <span className={`${styles.badge} ${STATUS_CLASS[task.status]}`}>{task.status}</span>
+                          </div>
+                          <div className={styles.streamProgress}>
+                            <div className={styles.progressBar}>
+                              <div
+                                className={styles.progressFill}
+                                style={{ width: `${Math.min((task.elapsedSeconds / task.maxSeconds) * 100, 100)}%` }}
+                              />
+                            </div>
+                            <span className={styles.progressText}>
+                              {task.elapsedSeconds}s / {task.maxSeconds}s
+                            </span>
+                          </div>
+                          <p className={styles.streamMeta}>
+                            {task.paidAmount.toFixed(4)} TICK @ {task.ratePerSecond}/s
+                          </p>
+                          <div className={styles.streamActions}>
+                            <button
+                              className={`${styles.button} ${styles.secondary} ${styles.small}`}
+                              onClick={() => startTask(task.id)}
+                              type="button"
+                              disabled={isBusy || task.status === "streaming" || task.status === "finished"}
+                            >
+                              Start
+                            </button>
+                            <button
+                              className={`${styles.button} ${styles.secondary} ${styles.small}`}
+                              onClick={() => pauseTask(task.id)}
+                              type="button"
+                            >
+                              Pause
+                            </button>
+                            <button
+                              className={`${styles.button} ${styles.secondary} ${styles.small}`}
+                              onClick={() => finishTask(task.id)}
+                              type="button"
+                            >
+                              Finish
+                            </button>
+                            <button
+                              className={`${styles.button} ${styles.secondary} ${styles.small}`}
+                              onClick={() => stopTask(task.id)}
+                              type="button"
+                              disabled={isBusy || !task.sessionId}
+                            >
+                              Stop
+                            </button>
+                          </div>
+                          {task.error && <p className={styles.streamMeta} style={{ color: "#f87171" }}>{task.error}</p>}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                <div className={styles.lane}>
+                  <div className={styles.laneHeader}>
+                    <h3>Agent C Tasks</h3>
+                    <span className={styles.laneRevenue}>+{agentCRevenue} TICK</span>
+                  </div>
+                  <p className={styles.streamMeta}>{shortAddress(agentCAddress)}</p>
+                  <div className={styles.streamList}>
+                    {agentCTasks.length === 0 ? (
+                      <p className={styles.streamMeta}>No tasks assigned yet</p>
+                    ) : (
+                      agentCTasks.map((task) => (
+                        <div className={styles.stream} key={task.id}>
+                          <div className={styles.streamHeader}>
+                            <p className={styles.streamTitle}>{task.title}</p>
+                            <span className={`${styles.badge} ${STATUS_CLASS[task.status]}`}>{task.status}</span>
+                          </div>
+                          <div className={styles.streamProgress}>
+                            <div className={styles.progressBar}>
+                              <div
+                                className={styles.progressFill}
+                                style={{ width: `${Math.min((task.elapsedSeconds / task.maxSeconds) * 100, 100)}%` }}
+                              />
+                            </div>
+                            <span className={styles.progressText}>
+                              {task.elapsedSeconds}s / {task.maxSeconds}s
+                            </span>
+                          </div>
+                          <p className={styles.streamMeta}>
+                            {task.paidAmount.toFixed(4)} TICK @ {task.ratePerSecond}/s
+                          </p>
+                          <div className={styles.streamActions}>
+                            <button
+                              className={`${styles.button} ${styles.secondary} ${styles.small}`}
+                              onClick={() => startTask(task.id)}
+                              type="button"
+                              disabled={isBusy || task.status === "streaming" || task.status === "finished"}
+                            >
+                              Start
+                            </button>
+                            <button
+                              className={`${styles.button} ${styles.secondary} ${styles.small}`}
+                              onClick={() => pauseTask(task.id)}
+                              type="button"
+                            >
+                              Pause
+                            </button>
+                            <button
+                              className={`${styles.button} ${styles.secondary} ${styles.small}`}
+                              onClick={() => finishTask(task.id)}
+                              type="button"
+                            >
+                              Finish
+                            </button>
+                            <button
+                              className={`${styles.button} ${styles.secondary} ${styles.small}`}
+                              onClick={() => stopTask(task.id)}
+                              type="button"
+                              disabled={isBusy || !task.sessionId}
+                            >
+                              Stop
+                            </button>
+                          </div>
+                          {task.error && <p className={styles.streamMeta} style={{ color: "#f87171" }}>{task.error}</p>}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            </article>
+
+            {/* Event Log */}
+            <article className={`${styles.panel} ${styles.logSection}`}>
+              <div className={styles.panelHeader}>
+                <div className={styles.panelIcon}>📝</div>
+                <h2>Event Log</h2>
+              </div>
+
+              <div className={styles.walletInfo}>
+                <span>Payer:</span>
+                <span className={styles.walletAddress}>{shortAddress(agentAAddress)}</span>
+                <span>|</span>
+                <span>Key: {agentAPrivateKey ? "Set" : "Not set"}</span>
+              </div>
+
+              {lastError && (
+                <p className={styles.streamMeta} style={{ color: "#f87171", marginBottom: "12px" }}>
+                  Error: {lastError}
+                </p>
               )}
-            </div>
-          </article>
-        </section>
+
+              <div className={styles.logBox}>
+                {logs.length === 0 ? (
+                  <p className={styles.logItem}>No events yet. Load a preset or assign a task.</p>
+                ) : (
+                  logs.map((log) => (
+                    <p className={styles.logItem} key={log.id}>
+                      <span className={styles.logTime}>[{log.createdAt}]</span>
+                      <span className={styles.logText}>{log.text}</span>
+                    </p>
+                  ))
+                )}
+              </div>
+            </article>
+          </div>
+        </div>
       </div>
     </main>
   );
