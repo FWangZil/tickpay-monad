@@ -18,6 +18,7 @@ interface StreamTask {
   elapsedSeconds: number;
   paidAmount: number;
   status: StreamStatus;
+  policyId: number; // Unique policy ID for each task
   sessionId?: string;
   startTxHash?: string;
   closeTxHash?: string;
@@ -77,6 +78,7 @@ export default function AgentToAgentDemo() {
   const [logs, setLogs] = useState<LogEvent[]>([]);
   const [isBusy, setIsBusy] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
+  const [nextPolicyId, setNextPolicyId] = useState(0);
 
   const [balances, setBalances] = useState({
     agentA: { tick: 0, native: 0 },
@@ -210,6 +212,7 @@ export default function AgentToAgentDemo() {
 
   function createTask() {
     if (!taskTitle.trim()) return;
+    const policyId = nextPolicyId;
     const newTask: StreamTask = {
       id: crypto.randomUUID(),
       title: taskTitle.trim(),
@@ -219,14 +222,18 @@ export default function AgentToAgentDemo() {
       elapsedSeconds: 0,
       paidAmount: 0,
       status: "queued",
+      policyId,
     };
 
+    setNextPolicyId((prev) => prev + 1);
     setTasks((current) => [newTask, ...current]);
     setTaskTitle("");
-    addLog(`Agent A assigned "${newTask.title}" to ${AGENT_LABEL[newTask.assignee]}.`);
+    addLog(`Agent A assigned "${newTask.title}" to ${AGENT_LABEL[newTask.assignee]} (policy ${policyId}).`);
   }
 
   function seedScenario() {
+    const policyIdB = nextPolicyId;
+    const policyIdC = nextPolicyId + 1;
     const preset: StreamTask[] = [
       {
         id: crypto.randomUUID(),
@@ -237,6 +244,7 @@ export default function AgentToAgentDemo() {
         elapsedSeconds: 0,
         paidAmount: 0,
         status: "queued",
+        policyId: policyIdB,
       },
       {
         id: crypto.randomUUID(),
@@ -247,10 +255,12 @@ export default function AgentToAgentDemo() {
         elapsedSeconds: 0,
         paidAmount: 0,
         status: "queued",
+        policyId: policyIdC,
       },
     ];
+    setNextPolicyId((prev) => prev + 2);
     setTasks((current) => [...preset, ...current]);
-    addLog("Preset scenario loaded: Agent A delegated two subtasks to Agent B and Agent C.");
+    addLog(`Preset scenario loaded: Agent A delegated two subtasks (policy ${policyIdB}, ${policyIdC}).`);
   }
 
   async function startTask(taskId: string) {
@@ -280,7 +290,7 @@ export default function AgentToAgentDemo() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           userAddress: account.address,
-          policyId: 0,
+          policyId: task.policyId,
         }),
       });
       const createData = await createRes.json();
@@ -325,7 +335,7 @@ export default function AgentToAgentDemo() {
         body: JSON.stringify({
           userAddress: account.address,
           signature,
-          policyId: 0,
+          policyId: task.policyId,
           deadline: createData.message.deadline,
           nonce: createData.message.nonce,
           payee: payeeAddress,
