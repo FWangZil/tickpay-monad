@@ -19,6 +19,7 @@ export interface StartSessionParams {
   policyId?: bigint;
   deadline?: bigint; // Must match the deadline used when signing
   nonce?: bigint; // Must match the nonce used when signing
+  payee?: Address; // Optional override for agent-to-agent settlement demos
 }
 
 export interface ChargeParams {
@@ -52,6 +53,7 @@ export async function startSession(params: StartSessionParams): Promise<{
     policyId = 0n,
     deadline: providedDeadline,
     nonce: providedNonce,
+    payee,
   } = params;
 
   // Use provided nonce/deadline from the signed message, or calculate defaults
@@ -88,7 +90,7 @@ export async function startSession(params: StartSessionParams): Promise<{
   const policyParams = {
     keeper: keeperAccount.address,
     token: config.TOKEN,
-    payee: config.PAYEE,
+    payee: payee ?? config.PAYEE,
     ratePerSecond: config.RATE_PER_SECOND,
     maxCost: BigInt(process.env.MAX_COST || "1000000000000000000000"), // 1000 tokens default
     maxSeconds: BigInt(process.env.MAX_SECONDS || "3600"), // 1 hour default
@@ -343,8 +345,9 @@ export async function chargeSession(params: ChargeParams): Promise<{
  * 3. Revokes EIP-7702 delegation (if private key provided)
  */
 export async function stopSession(params: StopSessionParams): Promise<{
-  closeTxHash: Hash;
+  closeTxHash?: Hash;
   revokeTxHash?: Hash;
+  alreadyClosed?: boolean;
 }> {
   const { sessionId, userAddress, userPrivateKey } = params;
 
@@ -358,15 +361,32 @@ export async function stopSession(params: StopSessionParams): Promise<{
   }
 
   try {
-    // Close the session on the user's delegated address
-    const closeTxHash = await walletClient.writeContract({
-      address: addressToUse,
-      abi: VIDEO_SESSION_LOGIC_ABI,
-      functionName: "closeSession",
-      args: [sessionId as `0x${string}`],
-    });
+    let closeTxHash: Hash | undefined;
+    let alreadyClosed = false;
 
-    await publicClient.waitForTransactionReceipt({ hash: closeTxHash });
+    try {
+      // Close the session on the user's delegated address
+      closeTxHash = await walletClient.writeContract({
+        address: addressToUse,
+        abi: VIDEO_SESSION_LOGIC_ABI,
+        functionName: "closeSession",
+        args: [sessionId as `0x${string}`],
+      });
+
+      await publicClient.waitForTransactionReceipt({ hash: closeTxHash });
+    } catch (error) {
+      const shortMessage =
+        (error as { shortMessage?: string })?.shortMessage ??
+        (error as { cause?: { shortMessage?: string } })?.cause?.shortMessage ??
+        (error as Error).message;
+
+      if (typeof shortMessage === "string" && shortMessage.toLowerCase().includes("already closed")) {
+        alreadyClosed = true;
+        console.log(`[Stop] Session ${sessionId} already closed onchain, treating stop as idempotent success.`);
+      } else {
+        throw error;
+      }
+    }
 
     // Stop charging loop if exists
     if (sessionState) {
@@ -379,14 +399,21 @@ export async function stopSession(params: StopSessionParams): Promise<{
     if (userPrivateKey) {
       try {
         revokeTxHash = await revokeDelegation(userAddress, userPrivateKey);
-        await publicClient.waitForTransactionReceipt({ hash: revokeTxHash });
+        // Current revoke implementation may return a placeholder hash ("0x").
+        // Only wait for receipt when we have a real tx hash.
+        if (typeof revokeTxHash === "string" && revokeTxHash.length === 66) {
+          await publicClient.waitForTransactionReceipt({ hash: revokeTxHash });
+        } else {
+          revokeTxHash = undefined;
+          console.log("[Stop] Revoke delegation skipped: no onchain revoke tx hash returned.");
+        }
       } catch (error) {
         console.error("Error revoking delegation:", error);
         // Don't throw - session is already closed
       }
     }
 
-    return { closeTxHash, revokeTxHash };
+    return { closeTxHash, revokeTxHash, alreadyClosed };
   } catch (error) {
     console.error("Error stopping session:", error);
     throw error;
@@ -413,7 +440,6 @@ export async function getSessionStatus(sessionId: string, userAddress?: Address)
   const addressToQuery = userAddress || activeSession?.userAddress;
 
   if (!addressToQuery) {
-    console.log("No user address available to query session status");
     return null;
   }
 

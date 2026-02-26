@@ -1,4 +1,5 @@
 import type { Request, Response } from "express";
+import { isAddress, type Address } from "viem";
 import { startSession } from "../session.js";
 
 /**
@@ -7,7 +8,7 @@ import { startSession } from "../session.js";
  */
 export async function startSessionHandler(req: Request, res: Response): Promise<void> {
   try {
-    const { userAddress, signature, userPrivateKey, policyId, authorizationList, deadline, nonce } = req.body;
+    const { userAddress, signature, userPrivateKey, policyId, authorizationList, deadline, nonce, payee } = req.body;
     const normalizedAuthorizationList = Array.isArray(authorizationList)
       ? authorizationList.map((auth) => ({
           ...auth,
@@ -34,6 +35,10 @@ export async function startSessionHandler(req: Request, res: Response): Promise<
       res.status(400).json({ error: "userAddress and signature are required" });
       return;
     }
+    if (payee !== undefined && !isAddress(payee)) {
+      res.status(400).json({ error: "payee must be a valid address" });
+      return;
+    }
 
     // Start the session
     const result = await startSession({
@@ -44,6 +49,7 @@ export async function startSessionHandler(req: Request, res: Response): Promise<
       policyId: policyId ? BigInt(policyId) : undefined,
       deadline: deadline ? BigInt(deadline) : undefined,
       nonce: nonce !== undefined ? BigInt(nonce) : undefined,
+      payee: payee ? (payee as Address) : undefined,
     });
 
     res.json({

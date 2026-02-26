@@ -46,13 +46,18 @@ export async function faucetHandler(req: Request, res: Response): Promise<void> 
 
     const userAddress = address as Address;
 
-    // Get balance before
-    const balanceBefore = await publicClient.readContract({
-      address: config.TOKEN,
-      abi: MOCK_ERC20_MINT_ABI,
-      functionName: "balanceOf",
-      args: [userAddress],
-    }) as bigint;
+    // Optional read-only checks. If RPC read path is flaky, keep faucet mint flow available.
+    let balanceBefore: bigint | null = null;
+    try {
+      balanceBefore = await publicClient.readContract({
+        address: config.TOKEN,
+        abi: MOCK_ERC20_MINT_ABI,
+        functionName: "balanceOf",
+        args: [userAddress],
+      }) as bigint;
+    } catch (error) {
+      console.warn("[Faucet] balanceBefore read failed, continue minting:", (error as Error).message);
+    }
 
     // Mint tokens
     const txHash = await walletClient.writeContract({
@@ -65,13 +70,17 @@ export async function faucetHandler(req: Request, res: Response): Promise<void> 
     // Wait for confirmation
     const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
 
-    // Get balance after
-    const balanceAfter = await publicClient.readContract({
-      address: config.TOKEN,
-      abi: MOCK_ERC20_MINT_ABI,
-      functionName: "balanceOf",
-      args: [userAddress],
-    }) as bigint;
+    let balanceAfter: bigint | null = null;
+    try {
+      balanceAfter = await publicClient.readContract({
+        address: config.TOKEN,
+        abi: MOCK_ERC20_MINT_ABI,
+        functionName: "balanceOf",
+        args: [userAddress],
+      }) as bigint;
+    } catch (error) {
+      console.warn("[Faucet] balanceAfter read failed:", (error as Error).message);
+    }
 
     console.log(`[Faucet] Minted 10 TICK to ${userAddress}, txHash: ${txHash}`);
 
@@ -80,8 +89,9 @@ export async function faucetHandler(req: Request, res: Response): Promise<void> 
       txHash,
       amount: "10",
       token: config.TOKEN,
-      balanceBefore: balanceBefore.toString(),
-      balanceAfter: balanceAfter.toString(),
+      balanceBefore: balanceBefore?.toString() ?? null,
+      balanceAfter: balanceAfter?.toString() ?? null,
+      warning: balanceAfter === null ? "Minted successfully, but balance read failed." : null,
     });
   } catch (error) {
     console.error("Error in faucet:", error);

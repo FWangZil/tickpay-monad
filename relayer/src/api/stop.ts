@@ -23,9 +23,10 @@ export async function stopSessionHandler(req: Request, res: Response): Promise<v
 
     res.json({
       success: true,
-      closeTxHash: result.closeTxHash,
+      closeTxHash: result.closeTxHash ?? null,
       revokeTxHash: result.revokeTxHash,
-      message: "Session stopped successfully",
+      alreadyClosed: !!result.alreadyClosed,
+      message: result.alreadyClosed ? "Session already closed (idempotent success)" : "Session stopped successfully",
     });
   } catch (error) {
     console.error("Error in stopSession:", error);

@@ -1,9 +1,11 @@
 import "dotenv/config";
-import { createServer } from "./server.js";
+import { ensureFetchPolyfill } from "./fetchPolyfill.js";
 
 const PORT = Number(process.env.PORT || "3001");
 
 async function main() {
+  ensureFetchPolyfill();
+
   // Validate required environment variables
   const requiredEnvVars = [
     "RPC_URL",
@@ -23,6 +25,7 @@ async function main() {
   }
 
   // Create and start server
+  const { createServer } = await import("./server.js");
   const app = createServer();
 
   app.listen(PORT, () => {
