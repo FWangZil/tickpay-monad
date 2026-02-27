@@ -1,18 +1,22 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { usePrivy, useWallets, useSign7702Authorization } from "@privy-io/react-auth";
 import { recoverTypedDataAddress } from "viem";
+import { createRelayerHttpClient } from "@tickpay/sdk/client/relayerHttp";
 import {
   checkExistingDelegation,
   NEXT_PUBLIC_LOGIC_CONTRACT,
   NEXT_PUBLIC_CHAIN_ID,
+  NEXT_PUBLIC_RELAYER_URL,
 } from "@/lib/viem";
 import type { Session, Address } from "@/lib/types";
 
 export default function Home() {
-  // Relayer URL from env
-  const relayerUrl = process.env.NEXT_PUBLIC_RELAYER_URL || "https://api-tickpay.ngrok.app";
+  const relayerClient = useMemo(
+    () => createRelayerHttpClient(NEXT_PUBLIC_RELAYER_URL),
+    []
+  );
 
   // Privy hooks
   const { login, logout, authenticated, ready, user } = usePrivy();
@@ -98,17 +102,7 @@ export default function Home() {
       setIsFaucetLoading(true);
       setError(null);
 
-      const response = await fetch(`${relayerUrl}/api/faucet`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ address: walletAddress }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to get tokens");
-      }
+      const data = await relayerClient.faucet({ address: walletAddress });
 
       // Update balance display
       const balanceInTokens = (Number(data.balanceAfter) / 1e18).toFixed(2);
@@ -164,22 +158,12 @@ export default function Home() {
 
       // Step 1: Create session (get EIP-712 data)
       console.log("Step 1: Creating session request...");
-      const createResponse = await fetch(`${relayerUrl}/api/session/create`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userAddress: walletAddress,
-          policyId: 0, // Use default policy
-        }),
+      const createData = await relayerClient.createSession({
+        userAddress: walletAddress,
+        policyId: 0,
       });
-
-      const createData = await createResponse.json();
       console.log("Session created:", createData);
       console.log("Domain from relayer:", createData.domain);
-
-      if (!createResponse.ok) {
-        throw new Error(createData.error || "Failed to create session");
-      }
 
       // Step 2: Build EIP-7702 delegation authorization using Privy
       console.log("Step 2: Building delegation authorization with Privy...");
@@ -219,7 +203,7 @@ export default function Home() {
       const actualSigner = await recoverTypedDataAddress({
         domain: typedData.domain,
         types: typedData.types,
-        primaryType: typedData.primaryType,
+        primaryType: "SessionRequest",
         message: typedData.message,
         signature: signature as `0x${string}`,
       });
@@ -244,30 +228,15 @@ export default function Home() {
         yParity: authorization.yParity !== undefined ? Number(authorization.yParity) : undefined,
       };
 
-      const startResponse = await fetch(`${relayerUrl}/api/session/start`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userAddress: walletAddress,
-          signature,
-          policyId: 0,
-          authorizationList: [authForJson],
-          deadline: createData.deadline,
-          nonce: createData.nonce,
-        }),
+      const startData = await relayerClient.startSession({
+        userAddress: walletAddress,
+        signature: signature as `0x${string}`,
+        policyId: 0,
+        authorizationList: [authForJson],
+        deadline: createData.deadline,
+        nonce: createData.nonce,
       });
-
-      const startData = await startResponse.json();
       console.log("Session started:", startData);
-
-      if (!startResponse.ok) {
-        console.error("Start session failed", {
-          status: startResponse.status,
-          details: startData?.details,
-          error: startData?.error,
-        });
-        throw new Error(startData.error || "Failed to start session");
-      }
 
       setActiveSessionId(startData.sessionId);
       // Note: Video is already playing since user triggered this by clicking play
@@ -299,19 +268,10 @@ export default function Home() {
     try {
       setIsLoading(true);
 
-      const response = await fetch(`${relayerUrl}/api/session/stop`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionId: activeSessionId,
-          userAddress: walletAddress,
-        }),
+      await relayerClient.stopSession({
+        sessionId: activeSessionId,
+        userAddress: walletAddress,
       });
-
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to stop session");
-      }
 
       setActiveSessionId(null);
       setSessionStatus(null);
@@ -324,14 +284,10 @@ export default function Home() {
 
   async function fetchSessionStatus(sessionId: string) {
     try {
-      const response = await fetch(`${relayerUrl}/api/session/status/${sessionId}`);
-      const data = await response.json();
-
-      if (response.ok) {
-        setSessionStatus(data);
-        if (data.closed) {
-          setActiveSessionId(null);
-        }
+      const data = await relayerClient.getSessionStatus(sessionId);
+      setSessionStatus(data);
+      if (data.closed) {
+        setActiveSessionId(null);
       }
     } catch (error) {
       console.error("Error fetching session status:", error);

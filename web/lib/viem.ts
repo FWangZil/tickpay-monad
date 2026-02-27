@@ -8,23 +8,23 @@ import {
   type Chain,
   type Hex,
 } from "viem";
+import { MONAD_TESTNET_CHAIN } from "@tickpay/sdk";
+import type { Authorization } from "@tickpay/sdk";
 import { hashAuthorization } from "viem/utils";
 
-// Monad chain configuration
+const NEXT_PUBLIC_RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || "https://testnet-rpc.monad.xyz";
+
 export const monad: Chain = {
-  id: 10143,
-  name: "Monad Testnet",
-  nativeCurrency: { name: "MON", symbol: "MON", decimals: 18 },
+  ...MONAD_TESTNET_CHAIN,
   rpcUrls: {
-    default: { http: [process.env.NEXT_PUBLIC_RPC_URL || "https://testnet-rpc.monad.xyz"] },
-  },
-  blockExplorers: {
-    default: { name: "Monad Explorer", url: "https://testnet.monadexplorer.com" },
-  },
+    ...MONAD_TESTNET_CHAIN.rpcUrls,
+    default: { http: [NEXT_PUBLIC_RPC_URL] },
+  }
 };
 
 // Environment variables
-export const NEXT_PUBLIC_RELAYER_URL = "https://api-tickpay.ngrok.app";
+export const NEXT_PUBLIC_RELAYER_URL =
+  process.env.NEXT_PUBLIC_RELAYER_URL || "http://localhost:3001";
 export const NEXT_PUBLIC_LOGIC_CONTRACT = (process.env.NEXT_PUBLIC_LOGIC_CONTRACT || "0x") as Address;
 export const NEXT_PUBLIC_TOKEN = (process.env.NEXT_PUBLIC_TOKEN || "0x") as Address;
 export const NEXT_PUBLIC_CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID || "10143");
@@ -193,16 +193,6 @@ export function setupWalletListeners(handlers: {
       window.ethereum.removeListener("disconnect", handleDisconnect);
     }
   };
-}
-
-export interface Authorization {
-  address: Address;
-  chainId: number;
-  nonce: number;
-  r: Hex;
-  s: Hex;
-  v?: number;
-  yParity?: number;
 }
 
 /**

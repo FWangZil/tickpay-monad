@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { formatUnits, isAddress, type Address, type Hex } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
+import { createRelayerHttpClient } from "@tickpay/sdk/client/relayerHttp";
 import styles from "./agent-to-agent.module.css";
 import { NEXT_PUBLIC_LOGIC_CONTRACT, NEXT_PUBLIC_TOKEN, NEXT_PUBLIC_RELAYER_URL, createPublicClientForChain } from "@/lib/viem";
 
@@ -62,6 +63,7 @@ function nowLabel() {
 export default function AgentToAgentDemo() {
   const publicClient = useMemo(() => createPublicClientForChain(), []);
   const [relayerUrl, setRelayerUrl] = useState(NEXT_PUBLIC_RELAYER_URL);
+  const relayerClient = useMemo(() => createRelayerHttpClient(relayerUrl), [relayerUrl]);
 
   const [agentAPrivateKey, setAgentAPrivateKey] = useState<Hex | "">("");
   const [agentAAddress, setAgentAAddress] = useState<Address | "">("");
@@ -156,14 +158,16 @@ export default function AgentToAgentDemo() {
 
   useEffect(() => {
     const timer = setInterval(async () => {
-      const targets = tasks.filter((task) => task.status === "streaming" && task.sessionId);
+      const targets = tasks.filter(
+        (task): task is StreamTask & { sessionId: string } =>
+          task.status === "streaming" && typeof task.sessionId === "string",
+      );
       if (targets.length === 0) return;
 
       for (const task of targets) {
         try {
-          const response = await fetch(`${relayerUrl}/api/session/status/${task.sessionId}`);
-          const data = await response.json();
-          if (!response.ok || !data.success) continue;
+          const data = await relayerClient.getSessionStatus(task.sessionId);
+          if (!data.success) continue;
 
           const chargedSeconds = Number(data.chargedSeconds || "0");
           const chargedAmount = Number(formatUnits(BigInt(data.chargedAmount || "0"), 18));
@@ -188,7 +192,7 @@ export default function AgentToAgentDemo() {
     }, 5000);
 
     return () => clearInterval(timer);
-  }, [tasks, relayerUrl]);
+  }, [tasks, relayerClient]);
 
   const totalPaid = useMemo(
     () => tasks.reduce((sum, task) => sum + task.paidAmount, 0).toFixed(4),
@@ -285,18 +289,10 @@ export default function AgentToAgentDemo() {
       setIsBusy(true);
       const account = privateKeyToAccount(agentAPrivateKey);
 
-      const createRes = await fetch(`${relayerUrl}/api/session/create`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userAddress: account.address,
-          policyId: task.policyId,
-        }),
+      const createData = await relayerClient.createSession({
+        userAddress: account.address,
+        policyId: task.policyId,
       });
-      const createData = await createRes.json();
-      if (!createRes.ok) {
-        throw new Error(createData.error || "Failed to create session");
-      }
 
       const signature = await account.signTypedData({
         domain: {
@@ -329,33 +325,25 @@ export default function AgentToAgentDemo() {
         nonce,
       });
 
-      const startRes = await fetch(`${relayerUrl}/api/session/start`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userAddress: account.address,
-          signature,
-          policyId: task.policyId,
-          deadline: createData.message.deadline,
-          nonce: createData.message.nonce,
-          payee: payeeAddress,
-          authorizationList: [
-            {
-              address: NEXT_PUBLIC_LOGIC_CONTRACT,
-              chainId: Number(authorization.chainId),
-              nonce: Number(authorization.nonce),
-              r: authorization.r,
-              s: authorization.s,
-              yParity: authorization.yParity,
-              v: authorization.v ? Number(authorization.v) : undefined,
-            },
-          ],
-        }),
+      const startData = await relayerClient.startSession({
+        userAddress: account.address,
+        signature,
+        policyId: task.policyId,
+        deadline: createData.message.deadline,
+        nonce: createData.message.nonce,
+        payee: payeeAddress,
+        authorizationList: [
+          {
+            address: NEXT_PUBLIC_LOGIC_CONTRACT,
+            chainId: Number(authorization.chainId),
+            nonce: Number(authorization.nonce),
+            r: authorization.r,
+            s: authorization.s,
+            yParity: authorization.yParity,
+            v: authorization.v ? Number(authorization.v) : undefined,
+          },
+        ],
       });
-      const startData = await startRes.json();
-      if (!startRes.ok) {
-        throw new Error(startData.details || startData.error || "Failed to start session");
-      }
 
       setTasks((current) =>
         current.map((item) =>
@@ -407,19 +395,11 @@ export default function AgentToAgentDemo() {
 
     try {
       setIsBusy(true);
-      const stopRes = await fetch(`${relayerUrl}/api/session/stop`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionId: task.sessionId,
-          userAddress: agentAAddress,
-          userPrivateKey: agentAPrivateKey,
-        }),
+      const stopData = await relayerClient.stopSession({
+        sessionId: task.sessionId,
+        userAddress: agentAAddress,
+        userPrivateKey: agentAPrivateKey,
       });
-      const stopData = await stopRes.json();
-      if (!stopRes.ok) {
-        throw new Error(stopData.details || stopData.error || "Failed to stop session");
-      }
 
       setTasks((current) =>
         current.map((item) =>
@@ -427,7 +407,7 @@ export default function AgentToAgentDemo() {
             ? {
                 ...item,
                 status: "finished",
-                closeTxHash: stopData.closeTxHash,
+                closeTxHash: stopData.closeTxHash ?? undefined,
                 error: undefined,
               }
             : item,
@@ -546,13 +526,7 @@ export default function AgentToAgentDemo() {
 
   async function faucetWallet(address: Address) {
     try {
-      const res = await fetch(`${relayerUrl}/api/faucet`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ address }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Faucet failed");
+      await relayerClient.faucet({ address });
       setLastError(null);
       addLog(`Faucet sent tokens to ${shortAddress(address)}.`);
     } catch (error: any) {
