@@ -1,12 +1,16 @@
 import type { Request, Response } from "express";
-import { getSessionStatus } from "../session.js";
-import { activeSessions, type SessionState } from "../client.js";
+import {
+  getCachedSession,
+  getSessionStatus,
+  isSessionCharging,
+  listCachedSessions
+} from "../session.js";
 
 /**
  * GET /api/session/status/:sessionId
- * Get session status - primarily from in-memory activeSessions
+ * Get session status - primarily from cached active sessions in sessionStore
  * Note: In EIP-7702, session data is stored in user's address, not the logic contract.
- * After delegation ends, we can't read from user's address, so we use in-memory data.
+ * After delegation ends, we can't read from user's address, so we use cached store data.
  */
 export async function getSessionStatusHandler(req: Request, res: Response): Promise<void> {
   try {
@@ -18,8 +22,8 @@ export async function getSessionStatusHandler(req: Request, res: Response): Prom
       return;
     }
 
-    // First check in-memory active sessions
-    const activeSession = activeSessions.get(id);
+    // First check cached active sessions
+    const activeSession = getCachedSession(id);
 
     if (activeSession) {
       // Calculate estimated charged amount based on elapsed time
@@ -38,7 +42,7 @@ export async function getSessionStatusHandler(req: Request, res: Response): Prom
         chargedAmount: estimatedCharged.toString(),
         lastChargeAt: activeSession.lastChargeAt.toString(),
         closed: false,
-        activelyCharging: !!activeSession.intervalId,
+        activelyCharging: isSessionCharging(id),
       });
       return;
     }
@@ -86,13 +90,13 @@ export async function getSessionStatusHandler(req: Request, res: Response): Prom
  */
 export async function getActiveSessionsHandler(req: Request, res: Response): Promise<void> {
   try {
-    const sessions = Array.from(activeSessions.values()).map((s: SessionState) => ({
+    const sessions = listCachedSessions().map((s) => ({
       sessionId: s.sessionId,
       userAddress: s.userAddress,
       policyId: s.policyId.toString(),
       startedAt: s.startedAt,
       lastChargeAt: s.lastChargeAt,
-      activelyCharging: !!s.intervalId,
+      activelyCharging: isSessionCharging(s.sessionId),
     }));
 
     res.json({

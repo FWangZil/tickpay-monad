@@ -53,14 +53,3 @@ export const config = {
   CHARGE_INTERVAL_SEC,
   CHAIN_ID
 };
-
-export interface SessionState {
-  sessionId: string;
-  userAddress: Address;
-  policyId: bigint;
-  startedAt: number;
-  lastChargeAt: number;
-  intervalId?: NodeJS.Timeout;
-}
-
-export const activeSessions = new Map<string, SessionState>();

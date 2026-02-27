@@ -1,5 +1,7 @@
 import "dotenv/config";
 import { ensureFetchPolyfill } from "./fetchPolyfill.js";
+import { closeSessionEngine, resumeActiveSessions } from "./session.js";
+import { sessionStoreConfig } from "./store.js";
 
 const PORT = Number(process.env.PORT || "3001");
 
@@ -28,6 +30,11 @@ async function main() {
   const { createServer } = await import("./server.js");
   const app = createServer();
 
+  await resumeActiveSessions();
+  console.log(
+    `[SessionStore] type=${sessionStoreConfig.SESSION_STORE} file=${sessionStoreConfig.SESSION_STORE_FILE}`
+  );
+
   app.listen(PORT, () => {
     console.log(`
 ╔═══════════════════════════════════════════════════════════╗
@@ -48,12 +55,16 @@ async function main() {
   // Graceful shutdown
   process.on("SIGINT", () => {
     console.log("\n\nShutting down gracefully...");
-    process.exit(0);
+    closeSessionEngine()
+      .catch((error) => console.error("Error closing session engine:", error))
+      .finally(() => process.exit(0));
   });
 
   process.on("SIGTERM", () => {
     console.log("\n\nShutting down gracefully...");
-    process.exit(0);
+    closeSessionEngine()
+      .catch((error) => console.error("Error closing session engine:", error))
+      .finally(() => process.exit(0));
   });
 }
 
