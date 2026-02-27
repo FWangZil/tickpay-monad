@@ -1,6 +1,10 @@
 import type { Request, Response } from "express";
 import { publicClient, config } from "../client.js";
-import { createSessionRequest, getDeadline } from "../eip712.js";
+import {
+  NONCES_ABI,
+  buildSessionRequestTypedData,
+  createSessionRequest,
+} from "@tickpay/sdk";
 
 /**
  * POST /api/session/create
@@ -22,15 +26,7 @@ export async function createSession(req: Request, res: Response): Promise<void> 
     try {
       nonce = await publicClient.readContract({
         address: userAddress, // Read from user's address (where EIP-7702 stores state)
-        abi: [
-          {
-            type: "function",
-            name: "nonces",
-            stateMutability: "view",
-            inputs: [{ name: "", type: "address" }],
-            outputs: [{ name: "", type: "uint256" }],
-          },
-        ],
+        abi: NONCES_ABI,
         functionName: "nonces",
         args: [userAddress],
       }) as bigint;
@@ -42,8 +38,8 @@ export async function createSession(req: Request, res: Response): Promise<void> 
 
     // Create session request
     const policyIdToUse = policyId ? BigInt(policyId) : 0n;
-    const deadline = getDeadline(3600); // 1 hour
     const request = createSessionRequest(userAddress, policyIdToUse, nonce as bigint, 60);
+    const typedData = buildSessionRequestTypedData(config.CHAIN_ID, userAddress, request);
 
     // Return typed data for wallet to sign
     res.json({
@@ -53,26 +49,9 @@ export async function createSession(req: Request, res: Response): Promise<void> 
       deadline: request.deadline.toString(),
       // EIP-712 domain and types for wallet signing
       // IMPORTANT: verifyingContract must be the user's EOA (delegated via EIP-7702)
-      domain: {
-        name: "TickPay",
-        version: "1",
-        chainId: config.CHAIN_ID,
-        verifyingContract: userAddress,
-      },
-      types: {
-        SessionRequest: [
-          { name: "user", type: "address" },
-          { name: "policyId", type: "uint256" },
-          { name: "nonce", type: "uint256" },
-          { name: "deadline", type: "uint256" },
-        ],
-      },
-      message: {
-        user: request.user,
-        policyId: request.policyId.toString(),
-        nonce: request.nonce.toString(),
-        deadline: request.deadline.toString(),
-      },
+      domain: typedData.domain,
+      types: typedData.types,
+      message: typedData.message,
     });
   } catch (error) {
     console.error("Error in createSession:", error);

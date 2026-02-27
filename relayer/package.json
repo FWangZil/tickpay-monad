@@ -14,6 +14,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@tickpay/sdk": "file:../sdk",
     "viem": "^2.21.54",
     "dotenv": "^16.4.5",
     "express": "^4.21.2",

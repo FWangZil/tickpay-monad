@@ -1,30 +1,16 @@
 import { type Address, hashTypedData, type Hex } from "viem";
+import {
+  TICKPAY_EIP712_TYPES,
+  buildSessionRequestDomain,
+  createSessionRequest as createSessionRequestCore,
+  getDeadline,
+  isDeadlineExpired
+} from "@tickpay/sdk";
+import type { SessionRequest } from "@tickpay/sdk";
 import { config } from "./client.js";
 
-// EIP-712 Domain
-export const EIP712_DOMAIN = {
-  name: "TickPay",
-  version: "1",
-  chainId: config.CHAIN_ID,
-  verifyingContract: config.LOGIC_CONTRACT,
-} as const;
-
-// EIP-712 Types
-export const EIP712_TYPES = {
-  SessionRequest: [
-    { name: "user", type: "address" },
-    { name: "policyId", type: "uint256" },
-    { name: "nonce", type: "uint256" },
-    { name: "deadline", type: "uint256" },
-  ],
-} as const;
-
-export type SessionRequest = {
-  user: Address;
-  policyId: bigint;
-  nonce: bigint;
-  deadline: bigint;
-};
+export const EIP712_DOMAIN = buildSessionRequestDomain(config.CHAIN_ID, config.LOGIC_CONTRACT);
+export const EIP712_TYPES = TICKPAY_EIP712_TYPES;
 
 /**
  * Generate EIP-712 typed data hash for session request
@@ -60,27 +46,7 @@ export function createSessionRequest(
   nonce: bigint,
   deadlineMinutes: number = 60
 ): SessionRequest {
-  const now = Math.floor(Date.now() / 1000);
-  return {
-    user: userAddress,
-    policyId,
-    nonce,
-    deadline: BigInt(now + deadlineMinutes * 60),
-  };
+  return createSessionRequestCore(userAddress, policyId, nonce, deadlineMinutes);
 }
 
-/**
- * Get deadline from timestamp
- */
-export function getDeadline(secondsFromNow: number = 3600): bigint {
-  const now = Math.floor(Date.now() / 1000);
-  return BigInt(now + secondsFromNow);
-}
-
-/**
- * Check if deadline has passed
- */
-export function isDeadlineExpired(deadline: bigint): boolean {
-  const now = Math.floor(Date.now() / 1000);
-  return BigInt(now) > deadline;
-}
+export { getDeadline, isDeadlineExpired };
