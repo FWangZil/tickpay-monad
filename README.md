@@ -65,6 +65,8 @@ tickpay/
 │   ├── src/core/                      # ABI, EIP-712, shared types
 │   ├── src/client/                    # Relayer HTTP client
 │   └── src/server/                    # Session engine for relayer-like services
+├── examples/
+│   └── minimal-relayer/               # Minimal runnable SDK-powered relayer
 └── README.md
 ```
 
@@ -127,6 +129,8 @@ cp .env.example .env
 # - LOGIC_CONTRACT=0x... (from deployment)
 # - TOKEN=0x... (from deployment)
 # - PAYEE=0x... (payment recipient)
+# - SESSION_STORE=file|memory (default: file)
+# - SESSION_STORE_FILE=.tickpay/sessions.json (optional)
 
 # Build and start
 npm run build
@@ -155,6 +159,15 @@ npm run dev
 ```
 
 Visit `http://localhost:3000` to see the demo.
+
+### 4. Run Minimal SDK Example (Optional)
+
+```bash
+cd examples/minimal-relayer
+npm install
+cp .env.example .env
+npm run dev
+```
 
 ## User Flow
 

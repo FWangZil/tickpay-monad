@@ -9,6 +9,8 @@ Reusable SDK primitives for building EIP-7702 streaming payment apps and service
 - Monad chain adapter (`MONAD_TESTNET_CHAIN`)
 - Relayer HTTP client (`createRelayerHttpClient`)
 - Server session engine (`createTickPaySessionEngine`)
+- Server eip7702 helpers (`@tickpay/sdk/server/eip7702`)
+- Server session store (`@tickpay/sdk/server/sessionStore`)
 
 ## Install
 
@@ -77,6 +79,9 @@ await engine.startSession({
 });
 ```
 
+For reliable session recovery across restarts, use `createSessionStore({ type: "file" })`
+and call `engine.resumeActiveSessions()` on service boot.
+
 ## Extension Pattern
 
 To support other streaming-payment systems:
@@ -84,3 +89,14 @@ To support other streaming-payment systems:
 1. Reuse `client/relayerHttp` and `core/eip712` if wire format is compatible.
 2. Add a new server engine module (for example, `createXxxSessionEngine`).
 3. Keep relayer routes thin; map request/response into engine calls.
+
+## Run Minimal Example
+
+```bash
+cd examples/minimal-relayer
+npm install
+cp .env.example .env
+npm run dev
+```
+
+Health check: `http://localhost:3002/health`

@@ -7,6 +7,8 @@ This relayer now uses `createTickPaySessionEngine` from `@tickpay/sdk/server/ses
 - Engine implementation: `sdk/src/server/sessionEngine.js`
 - Relayer composition root: `relayer/src/session.ts`
 - API handlers stay unchanged and call exported functions from `relayer/src/session.ts`
+- Store wiring: `relayer/src/store.ts` (`SESSION_STORE=file|memory`, default `file`)
+- Startup recovery: `relayer/src/main.ts` calls `resumeActiveSessions()`
 
 ## Why This Matters
 
@@ -24,6 +26,7 @@ The engine requires these injected dependencies:
 - `config`
 - `keeperAddress`
 - `activeSessions`
+- `sessionStore`
 - `buildAuthorization`
 - `revokeDelegation`
 
