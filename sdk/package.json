@@ -1,0 +1,42 @@
+{
+  "name": "@tickpay/sdk",
+  "version": "0.1.0",
+  "description": "TickPay SDK core primitives for EIP-7702 streaming payments",
+  "type": "module",
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./src/index.js",
+      "types": "./src/index.d.ts"
+    },
+    "./core/abis": {
+      "import": "./src/core/abis.js",
+      "types": "./src/core/abis.d.ts"
+    },
+    "./core/eip712": {
+      "import": "./src/core/eip712.js",
+      "types": "./src/core/eip712.d.ts"
+    },
+    "./core/types": {
+      "import": "./src/core/types.js",
+      "types": "./src/core/types.d.ts"
+    },
+    "./adapters/monad": {
+      "import": "./src/adapters/monad.js",
+      "types": "./src/adapters/monad.d.ts"
+    },
+    "./client/relayerHttp": {
+      "import": "./src/client/relayerHttp.js",
+      "types": "./src/client/relayerHttp.d.ts"
+    },
+    "./server/sessionEngine": {
+      "import": "./src/server/sessionEngine.js",
+      "types": "./src/server/sessionEngine.d.ts"
+    }
+  },
+  "files": [
+    "src"
+  ],
+  "license": "MIT"
+}
