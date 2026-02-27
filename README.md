@@ -61,6 +61,10 @@ tickpay/
 │       ├── viem.ts                     # Viem client configuration
 │       ├── eip712.ts                   # EIP-712 domain + types
 │       └── types.ts                    # TypeScript definitions
+├── sdk/                    # Reusable TickPay SDK (core + client + server engine)
+│   ├── src/core/                      # ABI, EIP-712, shared types
+│   ├── src/client/                    # Relayer HTTP client
+│   └── src/server/                    # Session engine for relayer-like services
 └── README.md
 ```
 
