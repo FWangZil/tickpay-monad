@@ -16,7 +16,7 @@ export function createTickPaySessionEngine(deps) {
     videoSessionLogicAbi,
     config,
     keeperAddress,
-    activeSessions,
+    sessionStore,
     buildAuthorization,
     revokeDelegation,
     logger = defaultLogger(),
@@ -24,7 +24,19 @@ export function createTickPaySessionEngine(deps) {
     maxSeconds = BigInt(process.env.MAX_SECONDS || "3600")
   } = deps;
 
+  const chargingLoops = new Map();
+  let initPromise;
+
+  function ensureInitialized() {
+    if (!initPromise) {
+      initPromise = sessionStore.init();
+    }
+    return initPromise;
+  }
+
   async function startSession(params) {
+    await ensureInitialized();
+
     const {
       userAddress,
       userSignature,
@@ -35,6 +47,16 @@ export function createTickPaySessionEngine(deps) {
       nonce: providedNonce,
       payee
     } = params;
+
+    const existingSession = sessionStore.findActiveByUser(userAddress, policyId);
+    if (existingSession) {
+      startChargingLoop(existingSession.sessionId);
+      return {
+        sessionId: existingSession.sessionId,
+        txHash: "0x",
+        policyId: existingSession.policyId
+      };
+    }
 
     let nonce;
     if (providedNonce !== undefined) {
@@ -66,15 +88,6 @@ export function createTickPaySessionEngine(deps) {
       expiry: BigInt(Math.floor(Date.now() / 1000) + 86400 * 30)
     };
 
-    logger.log("[Session] Opening session with policy:", {
-      userAddress,
-      policyId: policyId.toString(),
-      keeper: policyParams.keeper,
-      token: policyParams.token,
-      payee: policyParams.payee,
-      ratePerSecond: policyParams.ratePerSecond.toString()
-    });
-
     let txHash;
     const contractArgs = [
       request,
@@ -89,7 +102,6 @@ export function createTickPaySessionEngine(deps) {
     ];
 
     if (authorizationList && authorizationList.length > 0) {
-      logger.log("[EIP-7702] Using provided authorizationList:", JSON.stringify(authorizationList, null, 2));
       txHash = await walletClient.writeContract({
         address: userAddress,
         abi: videoSessionLogicAbi,
@@ -120,19 +132,6 @@ export function createTickPaySessionEngine(deps) {
       throw new Error("openSession transaction reverted");
     }
 
-    const codeAfterTx = await publicClient.getCode({ address: userAddress });
-    logger.log("[EIP-7702] Code at user address after tx:", codeAfterTx);
-    if (codeAfterTx && codeAfterTx.startsWith("0xef0100")) {
-      logger.log("[EIP-7702] Delegation is active:", `0x${codeAfterTx.slice(8)}`);
-    } else {
-      logger.error("[EIP-7702] Delegation is not active:", codeAfterTx);
-    }
-
-    logger.log(
-      "Transaction receipt logs:",
-      JSON.stringify(receipt.logs, (_, value) => (typeof value === "bigint" ? value.toString() : value), 2)
-    );
-
     const userLogs = receipt.logs.filter((log) => log.address.toLowerCase() === userAddress.toLowerCase());
     const events = parseEventLogs({
       abi: videoSessionLogicAbi,
@@ -142,7 +141,6 @@ export function createTickPaySessionEngine(deps) {
 
     let sessionId = events?.[0]?.args?.sessionId;
     if (!sessionId) {
-      logger.log("SessionOpened not found, calculating fallback sessionId...");
       const block = await publicClient.getBlock({ blockNumber: receipt.blockNumber });
 
       let sessionCountValue = null;
@@ -166,7 +164,7 @@ export function createTickPaySessionEngine(deps) {
     }
 
     const nowSec = Math.floor(Date.now() / 1000);
-    activeSessions.set(sessionId, {
+    sessionStore.set({
       sessionId,
       userAddress,
       policyId,
@@ -179,8 +177,9 @@ export function createTickPaySessionEngine(deps) {
   }
 
   async function chargeSession(params) {
+    await ensureInitialized();
     const { sessionId, secondsToBill } = params;
-    const sessionState = activeSessions.get(sessionId);
+    const sessionState = sessionStore.get(sessionId);
     if (!sessionState) {
       throw new Error("Session not found");
     }
@@ -192,7 +191,6 @@ export function createTickPaySessionEngine(deps) {
     }
 
     if (seconds < 1) {
-      logger.log(`[Charge] Skipping charge for ${sessionId}: <1 second elapsed`);
       return { txHash: "0x", secondsBilled: 0, amountCharged: 0n };
     }
 
@@ -211,14 +209,18 @@ export function createTickPaySessionEngine(deps) {
     const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
     logger.log(`[Charge] Charge tx confirmed, status: ${receipt.status}`);
 
-    sessionState.lastChargeAt = Math.floor(Date.now() / 1000);
+    sessionStore.set({
+      ...sessionState,
+      lastChargeAt: Math.floor(Date.now() / 1000)
+    });
     const amountCharged = BigInt(seconds || 0) * config.RATE_PER_SECOND;
     return { txHash, secondsBilled: seconds, amountCharged };
   }
 
   async function stopSession(params) {
+    await ensureInitialized();
     const { sessionId, userAddress, userPrivateKey } = params;
-    const sessionState = activeSessions.get(sessionId);
+    const sessionState = sessionStore.get(sessionId);
     const addressToUse = sessionState?.userAddress || userAddress;
     if (!addressToUse) {
       throw new Error("Session not found and no userAddress provided");
@@ -243,20 +245,13 @@ export function createTickPaySessionEngine(deps) {
       }
     }
 
-    if (sessionState) {
-      stopChargingLoop(sessionId);
-      activeSessions.delete(sessionId);
-    }
+    stopChargingLoop(sessionId);
+    sessionStore.delete(sessionId);
 
     let revokeTxHash;
     if (userPrivateKey) {
       try {
         revokeTxHash = await revokeDelegation(userAddress, userPrivateKey);
-        if (typeof revokeTxHash === "string" && revokeTxHash.length === 66) {
-          await publicClient.waitForTransactionReceipt({ hash: revokeTxHash });
-        } else {
-          revokeTxHash = undefined;
-        }
       } catch (error) {
         logger.error("Error revoking delegation:", error);
       }
@@ -266,8 +261,9 @@ export function createTickPaySessionEngine(deps) {
   }
 
   async function getSessionStatus(sessionId, userAddress) {
-    const activeSession = activeSessions.get(sessionId);
-    const addressToQuery = userAddress || activeSession?.userAddress;
+    await ensureInitialized();
+    const cachedSession = sessionStore.get(sessionId);
+    const addressToQuery = userAddress || cachedSession?.userAddress;
     if (!addressToQuery) {
       return null;
     }
@@ -289,7 +285,29 @@ export function createTickPaySessionEngine(deps) {
     }
   }
 
+  async function resumeActiveSessions() {
+    await ensureInitialized();
+    for (const session of sessionStore.values()) {
+      startChargingLoop(session.sessionId);
+    }
+  }
+
+  function getCachedSession(sessionId) {
+    return sessionStore.get(sessionId);
+  }
+
+  function listCachedSessions() {
+    return sessionStore.values();
+  }
+
+  function isCharging(sessionId) {
+    return chargingLoops.has(sessionId);
+  }
+
   function startChargingLoop(sessionId) {
+    if (chargingLoops.has(sessionId)) {
+      return;
+    }
     const intervalMs = config.CHARGE_INTERVAL_SEC * 1000;
     const intervalId = setInterval(async () => {
       try {
@@ -306,35 +324,43 @@ export function createTickPaySessionEngine(deps) {
           try {
             const decoded = decodeErrorResult({ abi: videoSessionLogicAbi, data: errorData });
             if (decoded?.errorName === "SessionClosed" || decoded?.errorName === "SessionExpired") {
-              stopChargingLoop(sessionId);
+              sessionStore.delete(sessionId);
             }
           } catch {
             // no-op
           }
-        } else {
-          stopChargingLoop(sessionId);
         }
+        stopChargingLoop(sessionId);
       }
     }, intervalMs);
 
-    const sessionState = activeSessions.get(sessionId);
-    if (sessionState) {
-      sessionState.intervalId = intervalId;
-    }
+    chargingLoops.set(sessionId, intervalId);
   }
 
   function stopChargingLoop(sessionId) {
-    const sessionState = activeSessions.get(sessionId);
-    if (sessionState && sessionState.intervalId) {
-      clearInterval(sessionState.intervalId);
-      sessionState.intervalId = undefined;
+    const intervalId = chargingLoops.get(sessionId);
+    if (intervalId) {
+      clearInterval(intervalId);
+      chargingLoops.delete(sessionId);
     }
+  }
+
+  async function close() {
+    for (const sessionId of chargingLoops.keys()) {
+      stopChargingLoop(sessionId);
+    }
+    await sessionStore.close();
   }
 
   return {
     startSession,
     chargeSession,
     stopSession,
-    getSessionStatus
+    getSessionStatus,
+    resumeActiveSessions,
+    getCachedSession,
+    listCachedSessions,
+    isCharging,
+    close
   };
 }

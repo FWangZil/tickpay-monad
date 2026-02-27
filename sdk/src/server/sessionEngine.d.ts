@@ -1,14 +1,6 @@
 import type { Abi, Address, Hash, Hex } from "viem";
 import type { Authorization } from "../core/types";
-
-export interface SessionState {
-  sessionId: string;
-  userAddress: Address;
-  policyId: bigint;
-  startedAt: number;
-  lastChargeAt: number;
-  intervalId?: NodeJS.Timeout;
-}
+import type { SessionStore, SessionStoreSessionState } from "./sessionStore";
 
 export interface TickPaySessionConfig {
   LOGIC_CONTRACT: Address;
@@ -24,7 +16,7 @@ export interface TickPaySessionEngineDeps {
   videoSessionLogicAbi: Abi;
   config: TickPaySessionConfig;
   keeperAddress: Address;
-  activeSessions: Map<string, SessionState>;
+  sessionStore: SessionStore;
   buildAuthorization: (delegateContract: Address, userPrivateKey: Hex) => Promise<Authorization>;
   revokeDelegation: (userAddress: Address, userPrivateKey: Hex) => Promise<Hash>;
   logger?: Pick<Console, "log" | "error" | "warn" | "info">;
@@ -57,11 +49,11 @@ export interface StopSessionParams {
 export interface TickPaySessionEngine {
   startSession(params: StartSessionParams): Promise<{
     sessionId: string;
-    txHash: Hash;
+    txHash: Hash | "0x";
     policyId: bigint;
   }>;
   chargeSession(params: ChargeParams): Promise<{
-    txHash: Hash;
+    txHash: Hash | "0x";
     secondsBilled: number;
     amountCharged: bigint;
   }>;
@@ -79,6 +71,11 @@ export interface TickPaySessionEngine {
     lastChargeAt: bigint;
     closed: boolean;
   } | null>;
+  resumeActiveSessions(): Promise<void>;
+  getCachedSession(sessionId: string): SessionStoreSessionState | undefined;
+  listCachedSessions(): SessionStoreSessionState[];
+  isCharging(sessionId: string): boolean;
+  close(): Promise<void>;
 }
 
 export declare function createTickPaySessionEngine(
