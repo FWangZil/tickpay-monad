@@ -16,6 +16,11 @@ export {
 } from "./core/eip712";
 export { MONAD_TESTNET_CHAIN } from "./adapters/monad";
 export { createRelayerHttpClient } from "./client/relayerHttp";
+export {
+  buildAuthorization as buildEip7702Authorization,
+  revokeDelegation as revokeEip7702Delegation,
+  ZERO_ADDRESS as EIP7702_ZERO_ADDRESS
+} from "./server/eip7702";
 
 export type {
   AddressLike,

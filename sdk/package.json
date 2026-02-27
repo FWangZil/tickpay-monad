@@ -33,10 +33,28 @@
     "./server/sessionEngine": {
       "import": "./src/server/sessionEngine.js",
       "types": "./src/server/sessionEngine.d.ts"
+    },
+    "./server/eip7702": {
+      "import": "./src/server/eip7702.js",
+      "types": "./src/server/eip7702.d.ts"
+    },
+    "./server/sessionStore": {
+      "import": "./src/server/sessionStore.js",
+      "types": "./src/server/sessionStore.d.ts"
     }
   },
   "files": [
     "src"
   ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test ./test/*.test.mjs"
+  },
+  "dependencies": {
+    "viem": "^2.21.54"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  },
   "license": "MIT"
 }
