@@ -1,7 +1,7 @@
 import type {
   AddressLike,
   Policy as SDKPolicy,
-  SessionRequest as SDKSessionRequest
+  SessionRequest as SDKSessionRequest,
 } from "@tickpay/sdk";
 import type {
   CreateSessionResponse,

@@ -15,9 +15,11 @@ import { hashAuthorization } from "viem/utils";
 const NEXT_PUBLIC_RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || "https://testnet-rpc.monad.xyz";
 
 export const monad: Chain = {
-  ...MONAD_TESTNET_CHAIN,
+  id: MONAD_TESTNET_CHAIN.id,
+  name: MONAD_TESTNET_CHAIN.name,
+  nativeCurrency: MONAD_TESTNET_CHAIN.nativeCurrency,
+  blockExplorers: MONAD_TESTNET_CHAIN.blockExplorers,
   rpcUrls: {
-    ...MONAD_TESTNET_CHAIN.rpcUrls,
     default: { http: [NEXT_PUBLIC_RPC_URL] },
   }
 };

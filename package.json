@@ -1,0 +1,17 @@
+{
+  "name": "tickpay-monorepo",
+  "private": true,
+  "workspaces": [
+    "sdk",
+    "relayer",
+    "web",
+    "examples/minimal-relayer"
+  ],
+  "scripts": {
+    "dev:web": "bun --cwd web run dev",
+    "dev:relayer": "bun --cwd relayer run dev",
+    "build:web": "bun --cwd web run build",
+    "build:relayer": "bun --cwd relayer run build",
+    "typecheck": "bun --cwd sdk run typecheck && bun --cwd relayer run typecheck && bun --cwd web run typecheck"
+  }
+}

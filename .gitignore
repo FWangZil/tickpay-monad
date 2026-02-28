@@ -10,3 +10,4 @@ contracts/broadcast/*
 web/.vercel/
 web/wrangler.toml
 web/tsconfig.tsbuildinfo
+node_modules

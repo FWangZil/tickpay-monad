@@ -158,9 +158,11 @@ export default function Home() {
 
       // Step 1: Create session (get EIP-712 data)
       console.log("Step 1: Creating session request...");
+      // Use a fresh policy id for each session to avoid reusing an expired on-chain policy.
+      const policyId = Date.now();
       const createData = await relayerClient.createSession({
         userAddress: walletAddress,
-        policyId: 0,
+        policyId,
       });
       console.log("Session created:", createData);
       console.log("Domain from relayer:", createData.domain);
@@ -231,7 +233,7 @@ export default function Home() {
       const startData = await relayerClient.startSession({
         userAddress: walletAddress,
         signature: signature as `0x${string}`,
-        policyId: 0,
+        policyId,
         authorizationList: [authForJson],
         deadline: createData.deadline,
         nonce: createData.nonce,

@@ -50,10 +50,11 @@
     "typecheck": "tsc --noEmit",
     "test": "node --test ./test/*.test.mjs"
   },
-  "dependencies": {
+  "peerDependencies": {
     "viem": "^2.21.54"
   },
   "devDependencies": {
+    "viem": "^2.21.54",
     "typescript": "^5.7.2"
   },
   "license": "MIT"
