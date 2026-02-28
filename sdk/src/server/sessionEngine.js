@@ -27,6 +27,14 @@ export function createTickPaySessionEngine(deps) {
   const chargingLoops = new Map();
   const chargeInFlight = new Map();
   const stoppingSessions = new Set();
+  const configuredStartSessionGas =
+    process.env.START_SESSION_GAS_LIMIT && process.env.START_SESSION_GAS_LIMIT.trim() !== ""
+      ? BigInt(process.env.START_SESSION_GAS_LIMIT)
+      : undefined;
+  const fallbackStartSessionGas =
+    process.env.START_SESSION_FALLBACK_GAS && process.env.START_SESSION_FALLBACK_GAS.trim() !== ""
+      ? BigInt(process.env.START_SESSION_FALLBACK_GAS)
+      : 1_500_000n;
   let initPromise;
 
   function sleep(ms) {
@@ -62,6 +70,18 @@ export function createTickPaySessionEngine(deps) {
       initPromise = sessionStore.init();
     }
     return initPromise;
+  }
+
+  function getShortMessage(error) {
+    return error?.shortMessage ?? error?.cause?.shortMessage ?? error?.message ?? "";
+  }
+
+  function isIntrinsicGasLimitError(error) {
+    const message = String(getShortMessage(error)).toLowerCase();
+    return (
+      message.includes("intrinsic gas greater than limit") ||
+      message.includes("intrinsic gas too low")
+    );
   }
 
   async function startSession(params) {
@@ -130,31 +150,44 @@ export function createTickPaySessionEngine(deps) {
       policyParams.maxSeconds,
       policyParams.expiry
     ];
-
-    if (authorizationList && authorizationList.length > 0) {
-      txHash = await walletClient.writeContract({
-        address: userAddress,
-        abi: videoSessionLogicAbi,
-        functionName: "openSessionWithPolicy",
-        args: contractArgs,
-        authorizationList
-      });
-    } else if (userPrivateKey) {
+    let effectiveAuthorizationList = authorizationList;
+    if ((!effectiveAuthorizationList || effectiveAuthorizationList.length === 0) && userPrivateKey) {
       const auth = await buildAuthorization(config.LOGIC_CONTRACT, userPrivateKey);
-      txHash = await walletClient.writeContract({
+      effectiveAuthorizationList = [auth];
+    }
+
+    const sendOpenSessionWithPolicy = async (gasOverride) => {
+      const requestConfig = {
         address: userAddress,
         abi: videoSessionLogicAbi,
         functionName: "openSessionWithPolicy",
         args: contractArgs,
-        authorizationList: [auth]
-      });
-    } else {
-      txHash = await walletClient.writeContract({
-        address: userAddress,
-        abi: videoSessionLogicAbi,
-        functionName: "openSessionWithPolicy",
-        args: contractArgs
-      });
+        gas: gasOverride,
+        authorizationList: effectiveAuthorizationList
+      };
+      if (!effectiveAuthorizationList || effectiveAuthorizationList.length === 0) {
+        delete requestConfig.authorizationList;
+      }
+      if (gasOverride === undefined) {
+        delete requestConfig.gas;
+      }
+      return walletClient.writeContract(requestConfig);
+    };
+
+    try {
+      txHash = await sendOpenSessionWithPolicy(configuredStartSessionGas);
+    } catch (error) {
+      if (configuredStartSessionGas === undefined && isIntrinsicGasLimitError(error)) {
+        logger.warn("[Start] Retrying openSessionWithPolicy with fallback gas", {
+          user: userAddress,
+          policyId: policyId.toString(),
+          gas: fallbackStartSessionGas.toString(),
+          reason: String(getShortMessage(error))
+        });
+        txHash = await sendOpenSessionWithPolicy(fallbackStartSessionGas);
+      } else {
+        throw error;
+      }
     }
 
     const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });

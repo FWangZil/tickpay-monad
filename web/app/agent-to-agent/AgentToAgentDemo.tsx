@@ -60,6 +60,10 @@ function nowLabel() {
   return new Date().toLocaleTimeString();
 }
 
+function isHexPrivateKey(value: string): value is Hex {
+  return /^0x[0-9a-fA-F]{64}$/.test(value);
+}
+
 export default function AgentToAgentDemo() {
   const publicClient = useMemo(() => createPublicClientForChain(), []);
   const [relayerUrl, setRelayerUrl] = useState(NEXT_PUBLIC_RELAYER_URL);
@@ -98,6 +102,27 @@ export default function AgentToAgentDemo() {
     generateWalletSet();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!agentAPrivateKey) {
+      setAgentAAddress("");
+      return;
+    }
+
+    if (!isHexPrivateKey(agentAPrivateKey)) {
+      setAgentAAddress("");
+      return;
+    }
+
+    try {
+      const account = privateKeyToAccount(agentAPrivateKey);
+      if (account.address !== agentAAddress) {
+        setAgentAAddress(account.address);
+      }
+    } catch {
+      setAgentAAddress("");
+    }
+  }, [agentAPrivateKey, agentAAddress]);
 
   useEffect(() => {
     const fetchBalances = async () => {
@@ -682,7 +707,7 @@ export default function AgentToAgentDemo() {
                 </div>
                 <div className={styles.field}>
                   <label>Agent A Address</label>
-                  <input value={agentAAddress} onChange={(e) => setAgentAAddress((e.target.value || "") as Address | "")} />
+                  <input value={agentAAddress} readOnly />
                 </div>
               </div>
 

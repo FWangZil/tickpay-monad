@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo } from "react";
+import Link from "next/link";
 import { usePrivy, useWallets, useSign7702Authorization } from "@privy-io/react-auth";
 import { recoverTypedDataAddress } from "viem";
 import { createRelayerHttpClient } from "@tickpay/sdk/client/relayerHttp";
@@ -361,6 +362,13 @@ export default function Home() {
 
           {/* Wallet Connection */}
           <div className="flex items-center gap-4">
+            <Link
+              href="/agent-to-agent"
+              className="px-3 py-1.5 rounded-lg border border-white/10 text-xs font-medium text-gray-400 hover:text-gray-200 hover:border-white/20 transition-colors"
+            >
+              Agent-to-Agent Demo
+            </Link>
+
             {authenticated && (
               <div className="px-4 py-1.5 rounded-full text-xs font-semibold border backdrop-blur-md transition-colors bg-green-500/10 border-green-500/20 text-green-400">
                 Monad Testnet
