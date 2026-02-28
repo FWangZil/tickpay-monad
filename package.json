@@ -1,6 +1,7 @@
 {
   "name": "tickpay-monorepo",
   "private": true,
+  "packageManager": "bun@1.3.10",
   "workspaces": [
     "sdk",
     "relayer",
