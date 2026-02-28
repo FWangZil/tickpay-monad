@@ -2,6 +2,11 @@
 
 A per-second video billing system using EIP-7702 account abstraction on Monad blockchain. Users temporarily delegate their account to a smart contract during video playback, enabling automated billing by a relayer, with immediate revocation after viewing.
 
+## Documentation
+
+- English: [README.md](./README.md) | [DEPLOYMENT.md](./DEPLOYMENT.md)
+- 中文: [README.zh-CN.md](./README.zh-CN.md) | [DEPLOYMENT.zh-CN.md](./DEPLOYMENT.zh-CN.md)
+
 ## Features
 
 - **EIP-7702 Account Abstraction**: Temporary delegation of user's EOA to billing contract
@@ -190,6 +195,7 @@ npm run dev
 ### VideoSessionLogic.sol
 
 **Key Functions:**
+
 - `createPolicy()` - Create billing policy (keeper, token, payee, rate, limits)
 - `openSession(request, signature)` - Start session with EIP-712 verification
 - `charge(sessionId, seconds)` - Process billing (keeper only)
@@ -197,10 +203,12 @@ npm run dev
 - `revokePolicy(policyId)` - Disable policy
 
 **Storage:**
+
 - Fixed slots using `keccak256("tickpay.policy")` and `keccak256("tickpay.session")`
 - No CREATE/CREATE2 (Monad EIP-7702 limitation)
 
 **Security:**
+
 - `charge()` restricted to keeper address
 - `openSession()` requires valid EIP-712 signature
 - Nonce-based replay protection
@@ -217,6 +225,7 @@ forge test -vv
 ```
 
 Test coverage includes:
+
 - Valid/invalid signature scenarios
 - Keeper authorization
 - maxCost enforcement

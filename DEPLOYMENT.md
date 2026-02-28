@@ -33,6 +33,7 @@ cp .env.example .env
 ```
 
 Edit `.env`:
+
 ```env
 # Deployment
 PRIVATE_KEY=0x... # Your deployment private key
@@ -66,6 +67,7 @@ forge script script/DeployVideoSession.s.sol:DeployVideoSession \
 ```
 
 **Save the output:**
+
 - `TOKEN_ADDRESS`: MockERC20 contract address
 - `LOGIC_CONTRACT`: VideoSessionLogic contract address
 - `POLICY_ID`: Initial policy ID
@@ -109,6 +111,7 @@ cp .env.example .env
 ```
 
 Edit `.env`:
+
 ```env
 # Monad Network
 RPC_URL=https://rpc.monad.xyz
@@ -172,6 +175,7 @@ CMD ["node", "dist/main.js"]
 ```
 
 Build and run:
+
 ```bash
 docker build -t tickpay-relayer .
 docker run -d -p 3001:3001 --env-file .env tickpay-relayer
@@ -205,6 +209,7 @@ cp .env.local.example .env.local
 ```
 
 Edit `.env.local`:
+
 ```env
 # Public variables (exposed to browser)
 NEXT_PUBLIC_RELAYER_URL=https://relayer.yourdomain.com
@@ -243,6 +248,7 @@ vercel --prod
 ```
 
 Add environment variables in Vercel dashboard:
+
 - `NEXT_PUBLIC_RELAYER_URL`
 - `NEXT_PUBLIC_LOGIC_CONTRACT`
 - `NEXT_PUBLIC_TOKEN`
@@ -313,6 +319,7 @@ forge verify-contract $LOGIC_CONTRACT \
 ### 3. Monitoring
 
 **Relayer Logs:**
+
 ```bash
 # PM2 logs
 pm2 logs tickpay-relayer
@@ -322,12 +329,14 @@ docker logs -f tickpay-relayer
 ```
 
 **Health Monitoring:**
+
 ```bash
 # Add uptime monitoring (UptimeRobot, Pingdom)
 # Monitor: https://relayer.yourdomain.com/health
 ```
 
 **Contract Events:**
+
 ```bash
 # Monitor SessionOpened events
 cast logs --address $LOGIC_CONTRACT \
@@ -354,11 +363,13 @@ cast logs --address $LOGIC_CONTRACT \
 ### Contract Issues
 
 **"Invalid signature" error:**
+
 - Check EIP-712 domain separator (chainId must match)
 - Verify signature was signed by correct user address
 - Check nonce hasn't been reused
 
 **"Not authorized" in charge():**
+
 - Verify msg.sender is the keeper address
 - Check policy.keeper is set correctly
 - Ensure relayer is using correct private key
@@ -366,11 +377,13 @@ cast logs --address $LOGIC_CONTRACT \
 ### Relayer Issues
 
 **"Failed to fetch" errors:**
+
 - Check RELAYER_URL is correct
 - Verify CORS is configured properly
 - Check network connectivity
 
 **Type 4 transaction failures:**
+
 - Verify EIP-7702 authorization list is properly formatted
 - Check user has sufficient gas for delegation
 - Ensure nonce is correct
@@ -378,11 +391,13 @@ cast logs --address $LOGIC_CONTRACT \
 ### Frontend Issues
 
 **Wallet connection fails:**
+
 - Check wallet is installed and unlocked
 - Verify chain ID matches
 - Check browser console for errors
 
 **Session not starting:**
+
 - Check user has sufficient token balance
 - Verify contract addresses are correct
 - Check relayer is running and accessible
@@ -435,11 +450,13 @@ pm2 restart tickpay-web
 ### Scaling
 
 **Multiple Relayers:**
+
 1. Deploy multiple relayer instances
 2. Use load balancer (nginx, AWS ALB)
 3. Share session state via Redis
 
 **Database:**
+
 - Move from in-memory to PostgreSQL
 - Store session history and analytics
 
@@ -467,6 +484,5 @@ pm2 restart tickpay-web
 ## Support
 
 For issues and questions:
-- GitHub Issues: [tickpay/issues](https://github.com/your-repo/tickpay/issues)
-- Discord: [Join our server](https://discord.gg/...)
-- Email: support@tickpay.example.com
+
+- GitHub Issues: [tickpay/issues](https://github.com/FWangZil/tickpay-monad/issues)

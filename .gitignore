@@ -9,3 +9,4 @@ web/.env.local
 contracts/broadcast/*
 web/.vercel/
 web/wrangler.toml
+web/tsconfig.tsbuildinfo
