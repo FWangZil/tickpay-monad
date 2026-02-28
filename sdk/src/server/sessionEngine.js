@@ -339,10 +339,21 @@ export function createTickPaySessionEngine(deps) {
 
     let revokeTxHash;
     if (userPrivateKey) {
-      try {
-        revokeTxHash = await revokeDelegation(userAddress, userPrivateKey);
-      } catch (error) {
-        logger.error("Error revoking delegation:", error);
+      const remainingSessionsForUser = sessionStore
+        .values()
+        .filter((session) => session.userAddress.toLowerCase() === addressToUse.toLowerCase());
+
+      if (remainingSessionsForUser.length > 0) {
+        logger.log("[Stop] Skip delegation revoke because other active sessions still exist", {
+          userAddress: addressToUse,
+          remainingSessions: remainingSessionsForUser.length
+        });
+      } else {
+        try {
+          revokeTxHash = await revokeDelegation(userAddress, userPrivateKey);
+        } catch (error) {
+          logger.error("Error revoking delegation:", error);
+        }
       }
     }
 
@@ -414,6 +425,13 @@ export function createTickPaySessionEngine(deps) {
             amountCharged: result.amountCharged.toString()
           });
         } catch (error) {
+          const shortMessage = String(getShortMessage(error)).toLowerCase();
+          if (shortMessage.includes("delegation has ended")) {
+            logger.warn(`[Charge] Stop loop for ${sessionId}: delegation has ended`);
+            sessionStore.delete(sessionId);
+            stopChargingLoop(sessionId);
+            return;
+          }
           logger.error(`[Charge] Loop error for ${sessionId}:`, error);
           const errorData = error?.data;
           if (errorData) {
