@@ -12,3 +12,4 @@ web/wrangler.toml
 web/tsconfig.tsbuildinfo
 node_modules
 relayer/.tickpay/sessions.json*
+relayer/.tickpay/sessions.json
