@@ -195,6 +195,13 @@ export function createTickPaySessionEngine(deps) {
       throw new Error("openSession transaction reverted");
     }
 
+    const codeAfterStart = await publicClient.getCode({ address: userAddress });
+    if (!codeAfterStart || codeAfterStart === "0x" || !codeAfterStart.startsWith("0xef0100")) {
+      throw new Error(
+        "EIP-7702 delegation was not activated after startSession. Please verify authorization nonce/signature and network support."
+      );
+    }
+
     const userLogs = receipt.logs.filter((log) => log.address.toLowerCase() === userAddress.toLowerCase());
     const events = parseEventLogs({
       abi: videoSessionLogicAbi,
@@ -214,7 +221,9 @@ export function createTickPaySessionEngine(deps) {
           functionName: "sessionCount"
         });
       } catch {
-        sessionCountValue = 1n;
+        throw new Error(
+          "SessionOpened event missing and sessionCount read failed. openSessionWithPolicy may not have executed on delegated code."
+        );
       }
 
       const lastId = sessionCountValue - 1n;

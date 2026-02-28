@@ -343,31 +343,14 @@ export default function AgentToAgentDemo() {
         },
       });
 
-      const nonce = await publicClient.getTransactionCount({ address: account.address });
-      const authorization = await account.signAuthorization({
-        address: NEXT_PUBLIC_LOGIC_CONTRACT,
-        chainId: Number(createData.domain.chainId),
-        nonce,
-      });
-
       const startData = await relayerClient.startSession({
         userAddress: account.address,
         signature,
+        userPrivateKey: agentAPrivateKey,
         policyId: task.policyId,
         deadline: createData.message.deadline,
         nonce: createData.message.nonce,
         payee: payeeAddress,
-        authorizationList: [
-          {
-            address: NEXT_PUBLIC_LOGIC_CONTRACT,
-            chainId: Number(authorization.chainId),
-            nonce: Number(authorization.nonce),
-            r: authorization.r,
-            s: authorization.s,
-            yParity: authorization.yParity,
-            v: authorization.v ? Number(authorization.v) : undefined,
-          },
-        ],
       });
 
       setTasks((current) =>
