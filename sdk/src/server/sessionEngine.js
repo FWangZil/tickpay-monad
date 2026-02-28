@@ -25,7 +25,37 @@ export function createTickPaySessionEngine(deps) {
   } = deps;
 
   const chargingLoops = new Map();
+  const chargeInFlight = new Map();
+  const stoppingSessions = new Set();
   let initPromise;
+
+  function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  async function waitForSessionClosed(address, sessionId, timeoutMs = 15_000, pollMs = 1_000) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() <= deadline) {
+      try {
+        const session = await publicClient.readContract({
+          address,
+          abi: videoSessionLogicAbi,
+          functionName: "getSession",
+          args: [sessionId]
+        });
+        if (session?.closed) {
+          return true;
+        }
+      } catch (error) {
+        const message = error?.shortMessage ?? error?.cause?.shortMessage ?? error?.message;
+        if (typeof message === "string" && message.includes("Session not found")) {
+          return true;
+        }
+      }
+      await sleep(pollMs);
+    }
+    return false;
+  }
 
   function ensureInitialized() {
     if (!initPromise) {
@@ -226,6 +256,17 @@ export function createTickPaySessionEngine(deps) {
       throw new Error("Session not found and no userAddress provided");
     }
 
+    stoppingSessions.add(sessionId);
+    stopChargingLoop(sessionId);
+    const inFlightCharge = chargeInFlight.get(sessionId);
+    if (inFlightCharge) {
+      try {
+        await inFlightCharge;
+      } catch {
+        // no-op: in-flight charge failures are handled in the loop path.
+      }
+    }
+
     let closeTxHash;
     let alreadyClosed = false;
     try {
@@ -238,11 +279,26 @@ export function createTickPaySessionEngine(deps) {
       await publicClient.waitForTransactionReceipt({ hash: closeTxHash });
     } catch (error) {
       const shortMessage = error?.shortMessage ?? error?.cause?.shortMessage ?? error?.message;
-      if (typeof shortMessage === "string" && shortMessage.toLowerCase().includes("already closed")) {
+      const normalizedMessage = typeof shortMessage === "string" ? shortMessage.toLowerCase() : "";
+      if (normalizedMessage.includes("already closed")) {
         alreadyClosed = true;
+      } else if (
+        normalizedMessage.includes("higher priority") ||
+        normalizedMessage.includes("nonce too low") ||
+        normalizedMessage.includes("already known") ||
+        normalizedMessage.includes("replacement transaction underpriced")
+      ) {
+        const closed = await waitForSessionClosed(addressToUse, sessionId);
+        if (closed) {
+          alreadyClosed = true;
+        } else {
+          throw error;
+        }
       } else {
         throw error;
       }
+    } finally {
+      stoppingSessions.delete(sessionId);
     }
 
     stopChargingLoop(sessionId);
@@ -310,27 +366,46 @@ export function createTickPaySessionEngine(deps) {
     }
     const intervalMs = config.CHARGE_INTERVAL_SEC * 1000;
     const intervalId = setInterval(async () => {
-      try {
-        const result = await chargeSession({ sessionId });
-        logger.log(`[Charge] Charged ${sessionId}`, {
-          txHash: result.txHash,
-          secondsBilled: result.secondsBilled,
-          amountCharged: result.amountCharged.toString()
-        });
-      } catch (error) {
-        logger.error(`[Charge] Loop error for ${sessionId}:`, error);
-        const errorData = error?.data;
-        if (errorData) {
-          try {
-            const decoded = decodeErrorResult({ abi: videoSessionLogicAbi, data: errorData });
-            if (decoded?.errorName === "SessionClosed" || decoded?.errorName === "SessionExpired") {
-              sessionStore.delete(sessionId);
+      if (stoppingSessions.has(sessionId)) {
+        return;
+      }
+      if (chargeInFlight.has(sessionId)) {
+        return;
+      }
+      const chargePromise = (async () => {
+        try {
+          const result = await chargeSession({ sessionId });
+          logger.log(`[Charge] Charged ${sessionId}`, {
+            txHash: result.txHash,
+            secondsBilled: result.secondsBilled,
+            amountCharged: result.amountCharged.toString()
+          });
+        } catch (error) {
+          logger.error(`[Charge] Loop error for ${sessionId}:`, error);
+          const errorData = error?.data;
+          if (errorData) {
+            try {
+              const decoded = decodeErrorResult({ abi: videoSessionLogicAbi, data: errorData });
+              if (decoded?.errorName === "SessionClosed" || decoded?.errorName === "SessionExpired") {
+                sessionStore.delete(sessionId);
+              }
+            } catch {
+              // no-op
             }
-          } catch {
-            // no-op
+          }
+          stopChargingLoop(sessionId);
+        } finally {
+          if (chargeInFlight.get(sessionId) === chargePromise) {
+            chargeInFlight.delete(sessionId);
           }
         }
-        stopChargingLoop(sessionId);
+      })();
+
+      chargeInFlight.set(sessionId, chargePromise);
+      try {
+        await chargePromise;
+      } catch {
+        // no-op: already handled above
       }
     }, intervalMs);
 
