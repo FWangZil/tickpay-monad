@@ -1,9 +1,52 @@
 import "dotenv/config";
+import { formatEther } from "viem";
 import { ensureFetchPolyfill } from "./fetchPolyfill.js";
 import { closeSessionEngine, resumeActiveSessions } from "./session.js";
 import { sessionStoreConfig } from "./store.js";
 
 const PORT = Number(process.env.PORT || "3001");
+
+function printBanner(lines: string[]): void {
+  const innerWidth = Math.max(...lines.map((line) => line.length), 0);
+  const horizontal = "═".repeat(innerWidth + 2);
+
+  console.log([
+    "",
+    `╔${horizontal}╗`,
+    ...lines.map((line) => `║ ${line.padEnd(innerWidth)} ║`),
+    `╚${horizontal}╝`,
+    "",
+  ].join("\n"));
+}
+
+async function getFaucetStatus() {
+  try {
+    const { keeperAccount, publicClient, config, ERC20_ABI } = await import("./client.js");
+    const faucetAddress = keeperAccount.address;
+
+    const [tickBalance, monBalance] = await Promise.all([
+      publicClient.readContract({
+        address: config.TOKEN,
+        abi: ERC20_ABI,
+        functionName: "balanceOf",
+        args: [faucetAddress],
+      }) as Promise<bigint>,
+      publicClient.getBalance({ address: faucetAddress }),
+    ]);
+
+    return {
+      faucetAddress,
+      tick: `${formatEther(tickBalance)} TICK`,
+      mon: `${formatEther(monBalance)} MON`,
+    };
+  } catch (error) {
+    return {
+      faucetAddress: "N/A",
+      tick: `N/A (${(error as Error).message})`,
+      mon: "N/A",
+    };
+  }
+}
 
 async function main() {
   ensureFetchPolyfill();
@@ -35,21 +78,27 @@ async function main() {
     `[SessionStore] type=${sessionStoreConfig.SESSION_STORE} file=${sessionStoreConfig.SESSION_STORE_FILE}`
   );
 
-  app.listen(PORT, () => {
-    console.log(`
-╔═══════════════════════════════════════════════════════════╗
-║                                                           ║
-║   TickPay Relayer - EIP-7702 Video Billing Service        ║
-║                                                           ║
-║   Server running on: http://localhost:${PORT}                   ║
-║   Health check: http://localhost:${PORT}/health               ║
-║                                                           ║
-║   Environment: ${process.env.NODE_ENV || "development"}                          ║
-║   Chain ID: ${process.env.CHAIN_ID}                                    ║
-║   Contract: ${process.env.LOGIC_CONTRACT}    ║
-║                                                           ║
-╚═══════════════════════════════════════════════════════════╝
-    `);
+  app.listen(PORT, async () => {
+    const faucet = await getFaucetStatus();
+
+    const lines = [
+      "",
+      "  TickPay Relayer - EIP-7702 Video Billing Service",
+      "",
+      `  Server running on: http://localhost:${PORT}`,
+      `  Health check: http://localhost:${PORT}/health`,
+      "",
+      `  Environment: ${process.env.NODE_ENV || "development"}`,
+      `  Chain ID: ${process.env.CHAIN_ID}`,
+      `  Contract: ${process.env.LOGIC_CONTRACT}`,
+      "",
+      `  Tick Faucet: ${faucet.faucetAddress}`,
+      `  Faucet TICK: ${faucet.tick}`,
+      `  Faucet MON: ${faucet.mon}`,
+      "",
+    ];
+
+    printBanner(lines);
   });
 
   // Graceful shutdown
