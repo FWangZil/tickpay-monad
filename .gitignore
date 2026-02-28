@@ -11,3 +11,4 @@ web/.vercel/
 web/wrangler.toml
 web/tsconfig.tsbuildinfo
 node_modules
+relayer/.tickpay/sessions.json*
